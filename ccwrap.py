@@ -37,6 +37,7 @@ def translate(pp_file, out_pp_file, language, cflags):
 
     args.extend(cflags)
     args.extend(["-load", plugin_path, "-plugin", "trace-instrument"])
+    print ' '.join(args)
     try:
         output = subprocess.check_output(args, stderr = subprocess.STDOUT)
     except subprocess.CalledProcessError, e:
@@ -125,6 +126,11 @@ def main():
 
         comp_args = []
         comp_args.extend(list(args))
+
+        if '-o' not in comp_args:
+            o_file = os.path.splitext(c_file)[0] + '.o'
+            comp_args.extend(['-o', o_file])
+
         comp_args[c_index] = out_pp_file
         ret = spawn(comp_args)
         return ret;
@@ -134,7 +140,7 @@ def main():
             # Delete the pp.i file only if the clang invocation was successful
             pass
             if clang_ret == 0:
-                os.unlink(out_pp_file)
+               os.unlink(out_pp_file)
 
 if __name__ == "__main__":
     sys.exit(main())

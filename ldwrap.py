@@ -82,7 +82,8 @@ def main():
     if linker_direct:
         vargs = args + ["--verbose"]
     else:
-        vargs = [os.getenv("LD", "ld")] + args + ["--verbose"]
+        print 'indirect'
+        vargs = args + ["-Xlinker", "--verbose"]
 
     s = subprocess.Popen(vargs, stdout=subprocess.PIPE, stderr=open("/dev/null"))
     output = s.stdout.read()
