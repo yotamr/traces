@@ -13,7 +13,7 @@ libtraceuser: $(LIBTRACEUSER_OBJS)
 	ar rcs libtraceuser.a trace_metadata_util.o trace_user.o halt.o
 
 simple_trace_reader: $(LIBTRACE_OBJS) trace_reader/simple_trace_reader.o
-	gcc -L. trace_reader/simple_trace_reader.o -ltrace -o trace_reader/trace_reader
+	gcc -L. trace_reader/simple_trace_reader.o -ltrace -o trace_reader/simple_trace_reader
 
 interactive_reader: trace_parser.h
 	h2xml  -c -I. trace_parser.h -o _trace_parser_ctypes.xml
@@ -26,4 +26,4 @@ trace_instrumentor: trace_instrumentor/trace_instrumentor.o
 	gcc $(LDFLAGS) -shared trace_instrumentor/trace_instrumentor.o  -o trace_instrumentor/trace_instrumentor.so
 
 clean:
-	rm *.o trace_dumper/trace_dumper trace_reader/trace_reader *so *.a
+	rm *.o trace_reader/simple_trace_reader.o trace_reader/simple_trace_reader trace_dumper/*.o trace_instrumentor/*.o trace_instrumentor/*.so trace_dumper/trace_dumper trace_reader/trace_reader *so *.a
