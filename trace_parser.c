@@ -480,6 +480,7 @@ int TRACE_PARSER__format_typed_record(trace_parser_t *parser, struct trace_parse
     if (parser->indent) {
         int i;
         if (record->nesting < 0) {
+            APPEND_FORMATTED_TEXT("(nesting = %d) ", record->nesting);
             record->nesting = 0;
         }
 
