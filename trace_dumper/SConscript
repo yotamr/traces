@@ -1,9 +1,0 @@
-Import('xn_env')
-Import('TracesDisabled')
-
-srcs = xn_env.AutoSplit('''../halt.c filesystem.c trace_dumper.c''')
-libs = ["tracereader", "rt"]
-with TracesDisabled(xn_env) as untraced_env:
-    prog = untraced_env.XnProgram(target = "trace_dumper", source = srcs, LIBS = libs)
-    xn_env.Alias('xn', prog)
-

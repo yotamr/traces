@@ -1,3 +1,0 @@
-#Import('xn_env')
-#cmd = xn_env.Command('_trace_parser_ctypes.py', None, "h2xml.py -c -I.. traces/trace_parser.h -o _trace_parser_ctypes.xml; xml2py.py -k f -k e -k s _trace_parser_ctypes.xml > _trace_parser_ctypes.py")
-#xn_env.Alias('xn', cmd)

@@ -1,8 +1,0 @@
-Import('xn_env')
-Import('TracesDisabled')
-
-srcs = xn_env.AutoSplit('''demo.cpp''')
-libs = ["rt"]
-prog = xn_env.XnProgram(target = "demo", source = srcs, LIBS = libs)
-xn_env.Alias('xn', prog)
-
