@@ -1,0 +1,5 @@
+ - Need to ensure during linking that types are identical
+ - Return with side effects not currently supported
+ - When a process exits, dump the remaining logs
+ - Nice errno representation
+ - Tail mode in non interactive reader

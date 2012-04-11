@@ -1,0 +1,42 @@
+Import('xn_env')
+Import('TracesDisabled')
+
+CLANG_LIB_PATH = "/usr/local/lib"
+CLANG_INCLUDE_PATH = "/usr/local/include/clang"
+
+with TracesDisabled(xn_env) as untraced_env:
+    srcs = untraced_env.Glob("*cpp")
+    libs = [
+        "clang",
+        "clangFrontend",
+        "clangAST",
+        "clangAnalysis",
+        "clangBasic",
+        "clangCodeGen",
+        "clangDriver",
+        "clangFrontendTool",
+        "clangIndex",
+        "clangLex",
+        "clangParse",
+        "clangRewrite",
+        "clangSema",
+        "clangSerialization",
+        "clangStaticAnalyzerCheckers",
+        "clangStaticAnalyzerCore",
+        "clangStaticAnalyzerFrontend"]
+    
+    lib = untraced_env.SharedLibrary(target = 'trace_instrumentor_untraced', source = srcs, LIBS=libs, LIBPATH=CLANG_LIB_PATH)
+    untraced_env['CCFLAGS'] = Split('''-D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -D_GNU_SOURCE -DHAVE_CLANG_CONFIG_H
+    -fPIC
+	-fno-common
+	-Woverloaded-virtual
+	-Wcast-qual
+	-fno-strict-aliasing
+	-Wall
+	-W
+	-Wno-unused-parameter
+	-Wwrite-strings
+	-fno-exceptions
+	-fno-rtti''')
+
+    untraced_env.Alias('xn', lib)
