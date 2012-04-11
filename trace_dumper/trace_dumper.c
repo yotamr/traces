@@ -196,7 +196,7 @@ static int dump_iovector_to_parser(struct trace_dumper_configuration_s *conf, st
                     if (!conf->syslog) {
                         printf("%s\n", formatted_record);
                     } else {
-                        syslog(LOG_DEBUG, formatted_record);
+                        syslog(LOG_DEBUG, "%s", formatted_record);
                     }
                 }
                 if (0 != rc) {
