@@ -570,7 +570,7 @@ enum trace_severity TraceCall::functionNameToTraceSeverity(std::string function_
     return trace_function_name_to_severity(function_name.c_str());
 }
 
-bool TraceParam::fromType(QualType type) {
+bool TraceParam::fromType(QualType type, bool fill_unknown_type) {
     QualType canonical_type = type.getCanonicalType();
     if (parseEnumTypeParam(canonical_type)) {
         return true;
@@ -578,7 +578,12 @@ bool TraceParam::fromType(QualType type) {
         return true;
     }
 
-    return false;
+    if (fill_unknown_type) {
+        const_str = "...";
+        return true;
+    } else {
+        return false;
+    }
 }
 
 bool TraceParam::fromExpr(const Expr *trace_param, bool interpret_char_ptr_as_string)
@@ -805,7 +810,7 @@ void DeclIterator::VisitFunctionDecl(FunctionDecl *D) {
         if ((*I)->getNameAsString().length() == 0) {
             continue;
         }
-        bool was_parsed = trace_param.fromType((*I)->getType().getCanonicalType());
+        bool was_parsed = trace_param.fromType((*I)->getType().getCanonicalType(), true);
         if (!was_parsed) {
             stmtiterator.Visit(D->getBody());
             return;

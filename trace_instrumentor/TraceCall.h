@@ -50,7 +50,7 @@ public:
     std::set<const Type *> &referencedTypes;
 
 TraceParam(ASTContext &_ast, Rewriter *rewriter, std::set<const Type *> &_referencedTypes) : ast(_ast), Rewrite(rewriter), referencedTypes(_referencedTypes), type_name("0") { clear(); };
-    bool fromType(QualType type);
+    bool fromType(QualType type, bool fill_unknown);
     bool fromExpr(const Expr *E, bool interpret_char_ptr_as_string);
     unsigned long flags;
     std::string const_str;
