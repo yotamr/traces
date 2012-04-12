@@ -21,7 +21,7 @@ import subprocess
 
 from ldwrap import main as ldmodwrap_main
 plugin_path = os.getenv('TRACE_INSTRUMENTOR', os.path.join(os.path.dirname(sys.argv[0]), "trace_instrumentor/trace_instrumentor.so"))
-clang_path = "/usr/local/bin/clang"
+clang_path = os.getenv('TRACE_CLANG_PATH', "clang")
 
 def spawn(args):
     return os.spawnvp(os.P_WAIT, args[0], args)
@@ -37,7 +37,6 @@ def translate(pp_file, out_pp_file, language, cflags):
 
     args.extend(cflags)
     args.extend(["-load", plugin_path, "-plugin", "trace-instrument"])
-    print ' '.join(args)
     try:
         output = subprocess.check_output(args, stderr = subprocess.STDOUT)
     except subprocess.CalledProcessError, e:
@@ -113,8 +112,6 @@ def main():
 
     out_pp_file = pp_file + ".i"
     ret = spawn(cpp_args)
-    print out_pp_file, 'crap'
-    print ' '.join(cpp_args)
     if ret:
         return ret
     clang_ret = 0;
@@ -138,7 +135,6 @@ def main():
         os.unlink(pp_file)
         if os.getenv("TRACE_NO_UNLINK_PPFILE", "") == "":
             # Delete the pp.i file only if the clang invocation was successful
-            pass
             if clang_ret == 0:
                os.unlink(out_pp_file)
 
