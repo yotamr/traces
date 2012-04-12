@@ -51,7 +51,7 @@ traces has the following dependencies:
     sudo pip install ctypeslib
 
  To build the traces framework, change directory to the root of the traces dir and run `make all`.
- To compile traces with existng code:
+ To compile traces with existing code:
     Replace compiler invocations to '$PATH_TO_CCWRAP $CC', where PATH_TO_CCWRAP is the absolute path of the ccwrap.py script
     Link the final executable with the libtraceuser.a library
     Run the traced executable
