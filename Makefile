@@ -26,4 +26,4 @@ trace_instrumentor: trace_instrumentor/trace_instrumentor.o
 	gcc $(LDFLAGS) -shared trace_instrumentor/trace_instrumentor.o  -o trace_instrumentor/trace_instrumentor.so
 
 clean:
-	rm *.o trace_reader/simple_trace_reader.o trace_reader/simple_trace_reader trace_dumper/*.o trace_instrumentor/*.o trace_instrumentor/*.so trace_dumper/trace_dumper trace_reader/trace_reader *so *.a
+	rm -f *.o trace_reader/simple_trace_reader.o trace_reader/simple_trace_reader trace_dumper/*.o trace_instrumentor/*.o trace_instrumentor/*.so trace_dumper/trace_dumper trace_reader/trace_reader *so *.a
