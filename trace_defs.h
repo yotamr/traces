@@ -48,7 +48,6 @@ TRACE_SEVERITY_DEF
 
 static inline int trace_strcmp(const char *s1, const char *s2)
 {
-     unsigned char uc1, uc2;
      /* Move s1 and s2 to the first differing characters 
         in each string, or the ends of the strings if they
         are identical.  */
@@ -58,8 +57,8 @@ static inline int trace_strcmp(const char *s1, const char *s2)
      }
      /* Compare the characters as unsigned char and
         return the difference.  */
-     uc1 = (*(unsigned char *) s1);
-     uc2 = (*(unsigned char *) s2);
+     const unsigned char uc1 = (*(const unsigned char *) s1);
+     const unsigned char uc2 = (*(const unsigned char *) s2);
      return ((uc1 < uc2) ? -1 : (uc1 > uc2));
  }
      
