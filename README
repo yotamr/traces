@@ -40,6 +40,7 @@ traces has the following dependencies:
     Python 2.6 or above
     python-ctypeslib (for the interactive reader)
     python-urwid (for the interactive reader)
+    gccxml
 
  Note: if python-ctypeslib is not packaged for your distro, then install python-pip instead and try one of these:
 
