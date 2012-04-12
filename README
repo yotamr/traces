@@ -41,6 +41,14 @@ traces has the following dependencies:
     python-ctypeslib (for the interactive reader)
     python-urwid (for the interactive reader)
 
+ Note: if python-ctypeslib is not packaged for your distro, then install python-pip instead and try one of these:
+
+    # for fedora based distros
+    sudo pip-python install ctypeslib
+
+    # for debian based distros
+    sudo pip install ctypeslib
+
  To build the traces framework, change directory to the root of the traces dir and run `make all`.
  To compile traces with existng code:
     Replace compiler invocations to '$PATH_TO_CCWRAP $CC', where PATH_TO_CCWRAP is the absolute path of the ccwrap.py script
