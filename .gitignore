@@ -4,3 +4,4 @@ trace_instrumentor/trace_instrumentor.so
 traces.so
 lib*.a
 *.o
+*.pyc
