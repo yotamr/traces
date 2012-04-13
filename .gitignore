@@ -2,6 +2,7 @@ trace_dumper/trace_dumper
 trace_reader/simple_trace_reader
 trace_instrumentor/trace_instrumentor.so
 traces.so
+demo/demo
 lib*.a
 *.o
 *.pyc
