@@ -1,10 +1,11 @@
-CCWRAP=/home/yotam/Code/core-system/traces/ccwrap.py
-LDWRAP=/home/yotam/Code/core-system/traces/ldwrap.py
+TRACES_ROOT_DIR:=$(abspath $(dir $(lastword $(MAKEFILE_LIST)))..)
+CCWRAP=$(TRACES_ROOT_DIR)/ccwrap.py
+LDWRAP=$(TRACES_ROOT_DIR)/ldwrap.py
 CC=$(CCWRAP) gcc
 CXX=$(CCWRAP) g++
 CXXFLAGS=-I..
 LD=$(LDWRAP) ld
-LDFLAGS=-L/home/yotam/Code/traces
+LDFLAGS=-L$(TRACES_ROOT_DIR)
 all: demo
 
 demo: demo.o
