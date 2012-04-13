@@ -182,6 +182,7 @@ buffer_dump_context_s._fields_ = [
     ('record_dump_contexts', record_dump_context_s * 150),
     ('end_offset', c_longlong),
     ('previous_dump_offset', c_longlong),
+    ('file_offset', c_longlong),
     ('num_chunks', c_uint),
 ]
 class trace_record_matcher_spec_s(Structure):

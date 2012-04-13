@@ -74,5 +74,59 @@ class AnsiText(urwid.Text):
         return palette
     
     
-    
-            
+class AdvancedEdit(urwid.Edit):
+    def __init__(self, completer = None, edit_text=u'',
+                 history=None, **kwargs):
+        if not history:
+            history = []
+        self.completer = completer
+        self.history = list(history)  # we temporarily add stuff here
+        self.historypos = None
+
+        if not isinstance(edit_text, unicode):
+            edit_text = string_decode(edit_text)
+        self.start_completion_pos = len(edit_text)
+        self.completions = None
+        urwid.Edit.__init__(self, edit_text=edit_text, **kwargs)
+
+    def set_completer(self, completer):
+        self.completer = completer
+        
+    def keypress(self, size, key):
+        # if we tabcomplete
+        if key in ['tab', 'shift tab'] and self.completer:
+            # if not already in completion mode
+            if not self.completions:
+                self.completions = [(self.edit_text, self.edit_pos)] + \
+                    self.completer.complete(self.edit_text, self.edit_pos)
+                self.focus_in_clist = 1
+            else:  # otherwise tab through results
+                if key == 'tab':
+                    self.focus_in_clist += 1
+                else:
+                    self.focus_in_clist -= 1
+            if len(self.completions) > 1:
+                ctext, cpos = self.completions[self.focus_in_clist %
+                                          len(self.completions)]
+                self.set_edit_text(ctext)
+                self.set_edit_pos(cpos)
+            else:
+                self.edit_pos += 1
+                if self.edit_pos >= len(self.edit_text):
+                    self.edit_text += ' '
+                self.completions = None
+        elif key in ['up', 'down']:
+            if self.history:
+                if self.historypos == None:
+                    self.history.append(self.edit_text)
+                    self.historypos = len(self.history) - 1
+                if key == 'cursor up':
+                    self.historypos = (self.historypos + 1) % len(self.history)
+                else:
+                    self.historypos = (self.historypos - 1) % len(self.history)
+                self.set_edit_text(self.history[self.historypos])
+        else:
+            result = urwid.Edit.keypress(self, size, key)
+            self.completions = None
+            return result
+                

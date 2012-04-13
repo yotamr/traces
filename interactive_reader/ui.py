@@ -1,7 +1,8 @@
 import sys
 import time
 import urwid
-from widgets import AnsiText
+from widgets import AnsiText, AdvancedEdit
+from completers import StringlistCompleter, MultipleSelectionCompleter
 from _CTraceParser import TraceParser, TraceFilter, FilterParseError
 from datetime import datetime
 
@@ -46,7 +47,7 @@ class TraceWalker(urwid.ListWalker):
             records = [(self._format_raw_record(formatted_record), raw_record)
                        for formatted_record, raw_record in self._parser.get_previous_n_records(self._current_trace_position - pos)]
             for i, (formatted_record, raw_record) in enumerate(records):
-                self._record_cache[self._current_trace_position - i - 1] = (formatted_record, raw_record)
+                self._record_cache[self._current_trace_position - (i + 1)] = (formatted_record, raw_record)
 
             formatted_record = records[-1][0]
         elif self._current_trace_position < pos:
@@ -60,15 +61,15 @@ class TraceWalker(urwid.ListWalker):
             formatted_record = records[0][0]
         else:
             formatted_record, raw_record = self._parser.get_next_n_records(1)[0]
+            self._current_trace_position += 1
             formatted_record = self._format_raw_record(formatted_record)
             self._record_cache[pos] = (formatted_record, raw_record)
             
 
-        self._current_trace_position = pos
-
         if not formatted_record:
             return None, None
         else:
+            self._current_trace_position = pos
             return formatted_record, pos
                                              
     def get_focus(self):
@@ -81,6 +82,7 @@ class TraceWalker(urwid.ListWalker):
         
     def get_next(self, start_from):
         records = self._get_record_at_pos(start_from + 1)
+
         return records
     
     def get_prev(self, start_from):
@@ -145,8 +147,8 @@ class TraceWalker(urwid.ListWalker):
         except FilterParseError:
             return None
 
-        return parsed_filter
-
+    def get_completion_names(self):
+        return self._parser.get_completion_names()
         
 
 palette = [
@@ -164,13 +166,14 @@ class TraceReaderUI(object):
     def __init__(self):
         self._trace_walker = TraceWalker()
         self._trace_view = urwid.ListBox(self._trace_walker)
-        self._edit_line = urwid.Edit()
+        self._edit_line = AdvancedEdit()
         self._info_line = urwid.Text('')
         self._footer = AnsiText(self._footer_text)
         self._command_indicator = urwid.Text('')
         self._command_indicator_string = '--> '
         self._command_mode = None
         self._last_command = None
+        self._last_filter = ''
         self._debug_enabled = True
 
         footer_columns = urwid.AttrMap(urwid.Columns([self._footer, self._info_line]), 'foot')
@@ -187,6 +190,7 @@ class TraceReaderUI(object):
         self._trace_walker.set_parser(self._trace_parser)
         self._trace_walker.reread()
         self._footer.set_text(self._footer_text + ['    ', filename])
+        self._edit_line.set_completer(MultipleSelectionCompleter(StringlistCompleter(self._trace_walker.get_completion_names())))
 
     def _clear_edit_line(self):
         self._edit_line.set_edit_text('')
@@ -205,13 +209,15 @@ class TraceReaderUI(object):
                 self._trace_view.set_focus_valign('top')
                 self._trace_view.set_focus(pos + i)
                 # TODO: Add timing information
-                print record.get_text()[0]
                 return 'found record'
 
 
     def _set_info_line(self, text):
         self._info_line.set_text(text)
 
+    def _goto_end_of_edit_line(self):
+        self._edit_line.edit_pos = 5
+        
     def _handle_search_expression(self, matcher):
         start_time = time.time()
         result = self._trace_walker.find_next_by_expression(matcher)
@@ -225,7 +231,6 @@ class TraceReaderUI(object):
 
         self._trace_view.set_focus(0)
         self._trace_view.set_focus_valign('top')
-#        self.loop.process_input(['down', 'up'])
 
         return result
     
@@ -254,6 +259,7 @@ class TraceReaderUI(object):
         if self._command_mode == 'search':
             status = self._handle_search_command_string(command_str)
         elif self._command_mode == 'filter':
+            self._last_filter = command_str
             status = self._handle_filter_command_string(command_str)
 
         self._set_info_line(str(status))
@@ -276,9 +282,14 @@ class TraceReaderUI(object):
         self._trace_walker.set_indent(self._debug_enabled)
         self._trace_walker.enable_debug(self._debug_enabled)
 
-    def _do_filter(self):
+    def _do_filter(self, new_filter = False):
         self._main_frame.set_focus('footer')
         self._command_mode = 'filter'
+        if not new_filter:
+            self._goto_end_of_edit_line()
+            self._edit_line.set_edit_text(self._last_filter)
+            self._edit_line.keypress((100,), 'end')
+            
         self._command_indicator.set_text(self._command_indicator_string)
 
     def _repeat_last_command(self):
@@ -294,8 +305,10 @@ class TraceReaderUI(object):
             raise urwid.ExitMainLoop()
         if input in ('s', 'S'):
             self._do_search_input()
-        if input in ('f', 'F'):
-            self._do_filter()
+        if input in ('f',):
+            self._do_filter(False)
+        if input in ('F',):
+            self._do_filter(True)
         if input in ('n', 'N'):
             self._repeat_last_command()
         if input in ('c', 'C'):

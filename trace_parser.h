@@ -83,6 +83,7 @@ struct buffer_dump_context_s {
     struct record_dump_context_s record_dump_contexts[RECORD_DUMP_CONTEXTS];
     long long end_offset;
     long long previous_dump_offset;
+    long long file_offset;
     unsigned int num_chunks;
 };
 
@@ -169,6 +170,7 @@ void TRACE_PARSER__set_color(trace_parser_t *parser, int has_color);
 void TRACE_PARSER__set_indent(trace_parser_t *parser, int indent);
 void TRACE_PARSER__set_verbose(trace_parser_t *parser, int verbose);
 void TRACE_PARSER__set_relative_ts(trace_parser_t *parser, int relative_ts);
+int TRACE_PARSER__process_all_metadata(trace_parser_t *parser);
 void TRACE_PARSER__set_filter(trace_parser_t *parser, struct trace_record_matcher_spec_s *filter);
 int TRACE_PARSER__find_next_record_by_expression(trace_parser_t *parser, struct trace_record_matcher_spec_s *expression);
 int TRACE_PARSER__find_previous_record_by_expression(trace_parser_t *parser, struct trace_record_matcher_spec_s *expression);

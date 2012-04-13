@@ -1,4 +1,5 @@
 from ctypes import *
+import sys
 import time
 from datetime import datetime
 import _trace_parser_ctypes as _cparser_defs
@@ -7,7 +8,7 @@ from _trace_parser_ctypes import TRACE_MATCHER_TRUE, TRACE_MATCHER_OR, TRACE_MAT
      TRACE_MATCHER_TYPE, TRACE_MATCHER_LOG_NAMED_PARAM_VALUE, TRACE_MATCHER_PROCESS_NAME
 
 from Bunch import Bunch
-from _ast import UnaryOp, BoolOp, And, Or, Not, Compare, Eq, Name, Num, Call, Str
+from _ast import UnaryOp, BoolOp, And, Or, Not, Compare, Eq, Name, Num, Call, Str, Lt
 import ast
 
 _traces_so = CDLL("./traces.so")
@@ -73,14 +74,14 @@ class TraceFilter(object):
         filter_type = op_type_to_filter_type[type(bool_op.op)]
         new_filter = _cparser_defs.trace_record_matcher_spec_s()
         new_filter.type = filter_type
-        self._struct_references.append(pointer(self._parse_expression(bool_op.values[0])))
-        self._struct_references.append(pointer(self._parse_expression(bool_op.values[1])))
-        new_filter.u.binary_operator_parameters.a = self._struct_references[-2]
-        new_filter.u.binary_operator_parameters.b = self._struct_references[-1]
+        new_filter.u.binary_operator_parameters.a = pointer(self._parse_expression(bool_op.values[0]))
+        new_filter.u.binary_operator_parameters.b = pointer(self._parse_expression(bool_op.values[1]))
+
+        self._struct_references.append(new_filter.u.binary_operator_parameters.a)
+        self._struct_references.append(new_filter.u.binary_operator_parameters.b)
 
         return new_filter
 
-    
     def _get_expr_comparator_name(self, comparison):
         return comparison.left.id
 
@@ -101,8 +102,45 @@ class TraceFilter(object):
         self._struct_references.append(pointer(self._parse_expression(operation.operand)))
         new_filter.u.unary_operator_parameters.param = self._struct_references[-1]
         return new_filter
+
+    def _is_time_filter(self, expression):
+        if not len(expression.ops) == 2:
+            return False
+        
+        if not (isinstance(expression.left, Str) and isinstance(expression.comparators[0], Name) and isinstance(expression.comparators[1], Str)):
+            return False
+
+        if expression.comparators[0].id != 'ts':
+                return False
+
+        return True
+
+    def _handle_time_filter(self, expression):
+        start_time = self.parser.partial_to_absolute_time(expression.left.s)
+        if not start_time:
+            return None
+
+        end_time = self.parser.partial_to_absolute_time(expression.comparators[1].s)
+        if not end_time:
+            return None
+
+        new_filter = _cparser_defs.trace_record_matcher_spec_s()
+        new_filter.type = TRACE_MATCHER_TIMERANGE
+        new_filter.u.time_range.start = start_time
+        new_filter.u.time_range.end = end_time
+        return new_filter
         
     def _handle_comparison(self, comparison):
+        if isinstance(comparison.left, Str):
+            if not self._is_time_filter(comparison):
+                raise FilterParseError()
+
+            new_filter = self._handle_time_filter(comparison)
+            if not new_filter:
+                raise FilterParseError()
+            else:
+                return new_filter
+            
         if not isinstance(comparison.ops[0], Eq):
             raise FilterParseError()
 
@@ -155,31 +193,53 @@ class TraceFilter(object):
         self._struct_references.append(true_matcher)
         return root
 
+    def _resolve_constant_value(self, value_name):
+        if value_name not in self.parser.metadata['all_const_values']:
+            return None
+        else:
+            return self.parser.metadata['all_const_values'][value_name]
+
+    def _resolve_value(self, raw_value):
+        if not isinstance(raw_value, (Num, Name)):
+            raise FilterParseError()
+
+        if isinstance(raw_value, Name):
+            value = self._resolve_constant_value(raw_value.id)
+            if value is None:
+                raise FilterParseError()
+        else:
+            value = raw_value.n
+
+        return value
+
     def _get_arg_matchers(self, args, keywords):
         value_matchers = []
         for arg in args:
-            if not isinstance(arg, Num):
+            if not isinstance(arg, (Num, Name)):
                 raise FilterParseError()
+
             
             value_matcher = _cparser_defs.trace_record_matcher_spec_s()
             value_matcher.type = TRACE_MATCHER_LOG_PARAM_VALUE
-            value_matcher.u.param_value = arg.n
+                
+            value_matcher.u.param_value = self._resolve_value(arg)
             value_matchers.append(value_matcher)
 
         for keyword in keywords:
             name, value = keyword.arg, keyword.value
-            if not isinstance(value, Num):
-                raise FilterParseError()
-
             field_matcher = _cparser_defs.trace_record_matcher_spec_s()
             field_matcher.type = TRACE_MATCHER_LOG_NAMED_PARAM_VALUE
             field_matcher.u.named_param_value.param_name = name;
-            field_matcher.u.named_param_value.param_value = value.n;
+            field_matcher.u.named_param_value.param_value = self._resolve_value(value)
             value_matchers.append(field_matcher)
             
             
         return value_matchers
 
+    def _handle_log_filter(self, args, keywords):
+        value_matchers = self._get_arg_matchers(args, keywords)
+        return self._chain_and_matchers(value_matchers)
+    
     def _handle_func_filter(self, func_name, args, keywords):
         func_filter = _cparser_defs.trace_record_matcher_spec_s()
         func_filter.type = TRACE_MATCHER_FUNCTION
@@ -227,11 +287,13 @@ class TraceFilter(object):
             return self._handle_typename(func_name, expression)
         elif func_name == '_call':
             return self._handle_func_filter(expression.args[0].s, expression.args[1:], expression.keywords)
+        elif func_name == '_':
+            return self._handle_log_filter(expression.args, expression.keywords)
         elif func_name == '_procname':
             return self._handle_procname_filter(expression.args[0].s)
         else:
             return self._handle_func_filter(func_name, expression.args, expression.keywords)
-        
+
     def _parse_expression(self, expression):
         if not isinstance(expression, (UnaryOp, BoolOp, Compare, Call)):
             raise FilterParseError()
@@ -244,6 +306,7 @@ class TraceFilter(object):
             return self._handle_unary_op(expression)
         elif isinstance(expression, Call):
             return self._handle_call(expression)
+
         
     @classmethod 
     def from_string(self, parser, filter_string):
@@ -268,6 +331,9 @@ class TraceFilter(object):
 class RawTraceRecord(Bunch):
     pass
 
+class ProcessMetadata(Bunch):
+    pass
+
 class TraceParser(object):
     def __init__(self, filename = None):
         event_handler_prototype = CFUNCTYPE(None, POINTER(_cparser_defs.trace_parser), c_int, c_void_p, c_void_p)
@@ -279,6 +345,9 @@ class TraceParser(object):
             _traces_so.TRACE_PARSER__from_file(byref(self._parser_handle), filename, self._handler, byref(c_int()))
         else:
             _traces_so.TRACE_PARSER__from_external_stream(byref(self._parser_handle), self._handler, byref(c_int()))
+
+        self._get_metadata()
+
 
     def _event_handler(self, parser, event_type, event_data, arg):
         print parser, event_type, event_data, arg
@@ -304,7 +373,6 @@ class TraceParser(object):
         _traces_so.TRACE_PARSER__set_severity_mask(byref(self._parser_handle), int(mask))
 
     def dump_file(self, filename, verbose = False, tail = False):
-        self.open_file(filename)
         return _traces_so.TRACE_PARSER__dump(byref(self._parser_handle), int(verbose), int(tail))
 
     def _bunchify_raw_record(self, raw_record_buffer):
@@ -351,6 +419,7 @@ class TraceParser(object):
 
     def _convert_to_nsec(self, raw_time):
         formats = ['%d/%m',
+                   '%H:%M',
                    '%H:%M:%S',
                    '%H:%M:%S:%f', 
                    ':%f', 
@@ -367,9 +436,55 @@ class TraceParser(object):
 
         return None
 
+
+    def _get_enums(self, raw_metadata, process_metadata, global_metadata):
+        type_index = 0
+        while raw_metadata.types[type_index].type_name:
+            current_type = raw_metadata.types[type_index]
+            type_name = current_type.type_name
+            process_metadata.enums[type_name] = {}
+            value_index = 0
+            while current_type.enum_values[value_index].name:
+                value = current_type.enum_values[value_index].value
+                name = current_type.enum_values[value_index].name
+                process_metadata.enums[type_name][value] = name
+                # TODO: Figure out what to do with const with same names but different values
+                global_metadata['all_const_values'][name] = value
+                value_index += 1
+
+            type_index += 1
+
+    def _get_functions(self, raw_metadata, process_metadata):
+        for i in xrange(raw_metadata.metadata.contents.log_descriptor_count):
+            if raw_metadata.descriptors[i].kind == _cparser_defs.TRACE_LOG_DESCRIPTOR_KIND_FUNC_ENTRY:
+                process_metadata.functions.add(raw_metadata.descriptors[i].params[0].const_str)
+
+    def _get_metadata(self):
+        _traces_so.TRACE_PARSER__process_all_metadata(byref(self._parser_handle))
+        self.metadata = {'all_const_values' : {}}
+        for i in xrange(_traces_so.BufferParseContextList__element_count(byref(self._parser_handle.buffer_contexts))):
+            process_metadata = ProcessMetadata(enums = {}, functions = set())
+            self.metadata[self._parser_handle.buffer_contexts.elements[i].id] = process_metadata
+            self._get_enums(self._parser_handle.buffer_contexts.elements[i], process_metadata, self.metadata)
+            self._get_functions(self._parser_handle.buffer_contexts.elements[i], process_metadata)
+
+    def get_known_metadata_names(self):
+        names = self.metadata['all_const_values'].keys()
+        for key, value in self.metadata.items():
+            if key == 'all_const_values':
+                continue
+
+            names.extend(value.functions)
+
+        return names
+
+    def get_completion_names(self):
+        all_names = self.get_known_metadata_names()
+        all_names.extend(['_typename(', '_call(', '_', '_procname(', 'and', 'or', 'not', 'severity', 'pid', 'tid'])
+        return all_names
+
     def _get_absolute_timestamp_from_partial_timestamp(self, timestamp):
         trace_time = datetime.utcfromtimestamp(self._last_record.ts / 1000000000.)
-        
         ranges = [(DAY, YEAR, ('month', 'day')),
                   (HOUR, DAY, ('hour',)),
                   (MINUTE, HOUR, ('minute',)),
@@ -425,14 +540,15 @@ class TraceParser(object):
         return self.seek_to_time(2**63)
 
     def __del__(self):
-        _trace_so.TRACE_PARSER__fini(byref(self._parser_handle))
+        _traces_so.TRACE_PARSER__fini(byref(self._parser_handle))
 
 if __name__ == '__main__':
-    print TraceFilter.from_string('calculate()')
-    # parser = TraceParser(sys.argv[1])
-    # parser.set_color(True)
-    # parser.set_indent(True)
-    # #parser.dump_file(sys.argv[1], verbose = True)
+    #print TraceFilter.from_string('calculate()')
+     parser = TraceParser(sys.argv[1])
+     parser.set_color(True)
+     parser.set_indent(True)
+     parser._get_metadata()
+
     # i = 50;
     # while (i):
     #     print parser.format_next_record()
