@@ -9,7 +9,7 @@ __off_t = c_long
 off_t = __off_t
 cached_file_s._fields_ = [
     ('fd', c_int),
-    ('cache', c_char * 4096),
+    ('cache', c_char * 32768),
     ('cache_start_offset', off_t),
     ('cache_end_offset', off_t),
     ('current_offset', off_t),

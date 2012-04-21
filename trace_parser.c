@@ -505,7 +505,7 @@ int TRACE_PARSER__format_typed_record(trace_parser_t *parser, struct trace_parse
             SIMPLE_APPEND_FORMATTED_TEXT("<-- ");
         }
 
-        if (param->flags & TRACE_PARAM_FLAG_NAMED_PARAM) {
+        if (param->flags & TRACE_PARAM_FLAG_NAMED_PARAM && trace_kind == TRACE_LOG_DESCRIPTOR_KIND_FUNC_ENTRY) {
             SIMPLE_APPEND_FORMATTED_TEXT(F_WHITE_BOLD(""));
             SIMPLE_APPEND_FORMATTED_TEXT(param->param_name);
             SIMPLE_APPEND_FORMATTED_TEXT(" = ");
