@@ -1003,6 +1003,12 @@ static bool_t record_params_contain_value(struct trace_record *record, const cha
     unsigned char *pdata = record->u.typed.payload;
     unsigned long long param_value;
     for (; param->flags != 0; param++) {
+        if (param_name) {
+            if (!(param->param_name)) {
+                continue;
+            }
+        }
+        
         bool_t valid_value = FALSE;
 
         if (param->flags & TRACE_PARAM_FLAG_ENUM) {
@@ -1048,14 +1054,14 @@ static bool_t record_params_contain_value(struct trace_record *record, const cha
         }
         
 
-        if (param_name) {
-            if (!(param->param_name)) {
-                continue;
-            }
-        }
-
         if (valid_value && value == param_value) {
-            return TRUE;
+            if (!param_name) {
+                return TRUE;
+            }
+
+            if (strcmp(param_name, param->param_name) == 0) {
+                return TRUE;
+            }
         }        
     }
 
