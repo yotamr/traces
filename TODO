@@ -3,4 +3,3 @@
  - When a process exits, dump the remaining logs
  - Nice errno representation
  - Tail mode in non interactive reader
- - Handle reverse read caching
