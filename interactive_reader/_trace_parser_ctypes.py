@@ -3,6 +3,18 @@ from ctypes import *
 STRING = c_char_p
 
 
+class cached_file_s(Structure):
+    pass
+__off_t = c_long
+off_t = __off_t
+cached_file_s._fields_ = [
+    ('fd', c_int),
+    ('cache', c_char * 4096),
+    ('cache_start_offset', off_t),
+    ('cache_end_offset', off_t),
+    ('current_offset', off_t),
+    ('file_end_offset', off_t),
+]
 class trace_type_definition(Structure):
     pass
 
@@ -163,11 +175,12 @@ parser_complete_typed_record._fields_ = [
 ]
 class trace_file_info(Structure):
     pass
+cached_file_t = cached_file_s
 trace_file_info._fields_ = [
     ('filename', c_char * 256),
     ('machine_id', c_char * 256),
     ('boot_time', c_long),
-    ('fd', c_int),
+    ('file_handle', cached_file_t),
 ]
 class record_dump_context_s(Structure):
     pass
@@ -288,7 +301,6 @@ trace_parser._fields_ = [
 ]
 class _G_fpos_t(Structure):
     pass
-__off_t = c_long
 class __mbstate_t(Structure):
     pass
 class N11__mbstate_t4DOT_26E(Union):
@@ -446,6 +458,38 @@ class sigevent(Structure):
     pass
 sigevent._fields_ = [
 ]
+class flock(Structure):
+    pass
+__pid_t = c_int
+flock._fields_ = [
+    ('l_type', c_short),
+    ('l_whence', c_short),
+    ('l_start', __off_t),
+    ('l_len', __off_t),
+    ('l_pid', __pid_t),
+]
+class flock64(Structure):
+    pass
+flock64._fields_ = [
+    ('l_type', c_short),
+    ('l_whence', c_short),
+    ('l_start', __off64_t),
+    ('l_len', __off64_t),
+    ('l_pid', __pid_t),
+]
+class f_owner_ex(Structure):
+    pass
+
+# values for enumeration '__pid_type'
+F_OWNER_TID = 0
+F_OWNER_PID = 1
+F_OWNER_PGRP = 2
+F_OWNER_GID = 2
+__pid_type = c_int # enum
+f_owner_ex._fields_ = [
+    ('type', __pid_type),
+    ('pid', __pid_t),
+]
 class __pthread_internal_list(Structure):
     pass
 __pthread_internal_list._fields_ = [
@@ -507,10 +551,82 @@ __cpu_mask = c_ulong
 cpu_set_t._fields_ = [
     ('__bits', __cpu_mask * 16),
 ]
+class __sigset_t(Structure):
+    pass
+__sigset_t._fields_ = [
+    ('__val', c_ulong * 16),
+]
+class stat(Structure):
+    pass
+__dev_t = c_ulong
+__ino_t = c_ulong
+__nlink_t = c_ulong
+__mode_t = c_uint
+__uid_t = c_uint
+__gid_t = c_uint
+__blksize_t = c_long
+__blkcnt_t = c_long
+stat._fields_ = [
+    ('st_dev', __dev_t),
+    ('st_ino', __ino_t),
+    ('st_nlink', __nlink_t),
+    ('st_mode', __mode_t),
+    ('st_uid', __uid_t),
+    ('st_gid', __gid_t),
+    ('__pad0', c_int),
+    ('st_rdev', __dev_t),
+    ('st_size', __off_t),
+    ('st_blksize', __blksize_t),
+    ('st_blocks', __blkcnt_t),
+    ('st_atim', timespec),
+    ('st_mtim', timespec),
+    ('st_ctim', timespec),
+    ('__unused', c_long * 3),
+]
+class stat64(Structure):
+    pass
+__ino64_t = c_ulong
+__blkcnt64_t = c_long
+stat64._fields_ = [
+    ('st_dev', __dev_t),
+    ('st_ino', __ino64_t),
+    ('st_nlink', __nlink_t),
+    ('st_mode', __mode_t),
+    ('st_uid', __uid_t),
+    ('st_gid', __gid_t),
+    ('__pad0', c_int),
+    ('st_rdev', __dev_t),
+    ('st_size', __off_t),
+    ('st_blksize', __blksize_t),
+    ('st_blocks', __blkcnt64_t),
+    ('st_atim', timespec),
+    ('st_mtim', timespec),
+    ('st_ctim', timespec),
+    ('__unused', c_long * 3),
+]
+class timeval(Structure):
+    pass
+__suseconds_t = c_long
+timeval._fields_ = [
+    ('tv_sec', __time_t),
+    ('tv_usec', __suseconds_t),
+]
 class __fsid_t(Structure):
     pass
 __fsid_t._fields_ = [
     ('__val', c_int * 2),
+]
+class iovec(Structure):
+    pass
+iovec._fields_ = [
+    ('iov_base', c_void_p),
+    ('iov_len', size_t),
+]
+class fd_set(Structure):
+    pass
+__fd_mask = c_long
+fd_set._fields_ = [
+    ('fds_bits', __fd_mask * 16),
 ]
 class __locale_struct(Structure):
     pass
@@ -530,58 +646,66 @@ class __va_list_tag(Structure):
 __va_list_tag._fields_ = [
 ]
 __all__ = ['TRACE_TYPE_ID_ENUM', 'N11__mbstate_t4DOT_26E',
-           'cpu_set_t', '__pthread_mutex_s', 'trace_type_definition',
-           'TRACE_MATCHER_TRUE', 'N14pthread_cond_t3DOT_6E',
-           '__fsid_t', 'FILE', '__off64_t', 'size_t',
-           'trace_file_info', 'TRACE_MATCHER_TYPE', 'trace_parser',
+           'cpu_set_t', 'F_OWNER_GID', '__pthread_mutex_s',
+           'trace_type_definition', 'TRACE_MATCHER_TRUE',
+           'N14pthread_cond_t3DOT_6E', '__fsid_t', 'FILE',
+           '__off64_t', 'size_t', 'trace_file_info',
+           'TRACE_MATCHER_TYPE', 'fd_set', 'trace_parser',
            'N4DOT_234DOT_24E', 'RecordsAccumulatorList', 'tm',
-           '__cpu_mask', 'TRACE_MATCHER_FUNCTION', 'trace_record',
-           'TRACE_INPUT_STREAM_TYPE_NONSEEKABLE',
+           '__ino64_t', '__cpu_mask', 'TRACE_MATCHER_FUNCTION',
+           'trace_record', 'TRACE_INPUT_STREAM_TYPE_NONSEEKABLE',
            '__pthread_internal_list', 'TRACE_MATCHER_PID',
+           'F_OWNER_PGRP', 'trace_record_buffer_dump',
            'trace_input_stream_type', 'TRACE_MATCHER_NOT', '__time_t',
            'buffer_dump_context_s', '_G_fpos64_t',
-           'trace_record_metadata', 'trace_enum_value', '_IO_jump_t',
+           'trace_record_metadata', '__blksize_t', 'trace_enum_value',
+           '_IO_jump_t', '__nlink_t',
            'TRACE_INPUT_STREAM_TYPE_SEEKABLE_FILE',
            'RecordsAccumulatorList_s', 'TRACE_MATCHER_PROCESS_NAME',
-           '__io_close_fn', '__va_list_tag', 'sigevent',
+           '__io_close_fn', '__va_list_tag', 'sigevent', '__fd_mask',
            'trace_log_descriptor_kind', 'trace_metadata_region',
-           'trace_time_range', 'TRACE_TYPE_ID_RECORD',
-           'trace_param_descriptor', 'TRACE_MATCHER_SEVERITY',
-           'TRACE_MATCHER_LOGID', '__jmp_buf_tag',
-           'TRACE_MATCHER_TIMERANGE', '_G_fpos_t',
+           'trace_time_range', 'flock', '__sigset_t', '__pid_type',
+           'TRACE_TYPE_ID_RECORD', 'trace_param_descriptor',
+           'TRACE_MATCHER_SEVERITY', 'TRACE_MATCHER_LOGID',
+           '__jmp_buf_tag', 'TRACE_MATCHER_TIMERANGE', '_G_fpos_t',
            '_pthread_cleanup_buffer', '_IO_cookie_io_functions_t',
            'trace_record_dump_header', '__locale_data',
            '_IO_FILE_plus',
            'TRACE_PARSER_COMPLETE_TYPED_RECORD_PROCESSED',
-           'BufferParseContextList_s', '__pthread_list_t',
-           'TRACE_PARSER_MATCHED_RECORD',
+           'BufferParseContextList_s', '__blkcnt_t',
+           '__pthread_list_t', 'cached_file_t', 'cached_file_s',
+           'TRACE_PARSER_MATCHED_RECORD', '__ino_t',
            'TRACE_LOG_DESCRIPTOR_KIND_FUNC_LEAVE', 'timespec',
-           'N16pthread_rwlock_t3DOT_9E',
+           'N16pthread_rwlock_t3DOT_9E', '__mode_t',
            'parser_complete_typed_record', '__sched_param',
            'BufferParseContextList', 'trace_record_u', '__off_t',
-           'record_dump_context_s', 'TRACE_PARSER_SEARCHING_METADATA',
-           '__ssize_t', 'obstack', 'trace_record_file_header',
-           '_IO_cookie_file',
+           'record_dump_context_s', '__gid_t',
+           'TRACE_PARSER_SEARCHING_METADATA', '__ssize_t', 'obstack',
+           'trace_record_file_header', '_IO_cookie_file',
            'trace_record_matcher_binary_operator_params',
-           'TRACE_MATCHER_FALSE', '__mbstate_t',
-           'TRACE_MATCHER_LOG_PARAM_VALUE', '__io_seek_fn',
-           'trace_parser_event_e', '_4DOT_23',
-           'TRACE_TYPE_ID_TYPEDEF', 'TRACE_MATCHER_TID', '_IO_FILE',
+           '__mbstate_t', 'TRACE_MATCHER_LOG_PARAM_VALUE',
+           '__io_seek_fn', 'trace_parser_event_e', '_4DOT_23',
+           '__blkcnt64_t', '__dev_t', 'TRACE_TYPE_ID_TYPEDEF',
+           'trace_parser_buffer_context', '__suseconds_t',
+           'TRACE_MATCHER_TID', '_IO_FILE',
            'TRACE_LOG_DESCRIPTOR_KIND_FUNC_ENTRY', 'sched_param',
            '__locale_struct', '__io_read_fn', 'trace_type_id',
-           'trace_parser_buffer_context', 'trace_record_buffer_dump',
-           '__jmp_buf', 'trace_record_matcher_unary_operator_params',
+           'f_owner_ex', 'off_t', 'TRACE_MATCHER_FALSE', 'iovec',
+           '__jmp_buf', 'stat64',
+           'trace_record_matcher_unary_operator_params',
            '__pthread_cleanup_frame',
            'trace_matcher_named_param_value',
            'TRACE_MATCHER_LOG_NAMED_PARAM_VALUE',
-           'trace_record_matcher_data_u', '_IO_marker',
-           'N21trace_type_definition4DOT_30E', 'TRACE_MATCHER_OR',
+           'trace_record_matcher_data_u', 'timeval', '_IO_marker',
+           'N21trace_type_definition4DOT_30E', 'F_OWNER_PID', 'stat',
+           '__pid_t', 'TRACE_MATCHER_OR',
            'trace_record_matcher_spec_s', '__io_write_fn',
            'TRACE_PARSER_FOUND_METADATA',
            'TRACE_LOG_DESCRIPTOR_KIND_EXPLICIT',
            'trace_log_descriptor',
            'N22trace_param_descriptor4DOT_31E', '_IO_lock_t',
            'itimerspec', 'trace_record_accumulator',
-           'TRACE_MATCHER_AND', 'trace_record_typed',
+           'TRACE_MATCHER_AND', 'F_OWNER_TID', 'flock64',
+           'trace_record_typed', '__uid_t',
            'trace_record_matcher_type',
            'trace_parser_event_handler_t']

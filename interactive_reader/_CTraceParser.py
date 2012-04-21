@@ -52,6 +52,9 @@ def make_bound_handler(parser_obj):
         _traces_so.TRACE_PARSER__format_typed_record(parser, complete_record_ptr.contents.buffer, complete_record_ptr.contents.record, formatted_record, 1024 * 10, byref(format_length))
         parser_obj.record_ready = True
         parser_obj.formatted_record = formatted_record.value
+        
+        if event_type == _cparser_defs.TRACE_PARSER_MATCHED_RECORD:
+            print 'TRACE found', parser_obj.formatted_record
         record_copy = _cparser_defs.trace_record()
         pointer(record_copy)[0] = complete_record_ptr.contents.record[0]
         parser_obj.raw_record = record_copy
@@ -528,6 +531,14 @@ class TraceParser(object):
     def find_next_by_expression(self, matcher):
         import time
         result = _traces_so.TRACE_PARSER__find_next_record_by_expression(byref(self._parser_handle), byref(matcher))
+        if result == 0:
+            return True
+        else:
+            return False
+
+    def find_previous_by_expression(self, matcher):
+        import time
+        result = _traces_so.TRACE_PARSER__find_previous_record_by_expression(byref(self._parser_handle), byref(matcher))
         if result == 0:
             return True
         else:
