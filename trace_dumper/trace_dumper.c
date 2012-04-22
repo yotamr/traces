@@ -14,18 +14,18 @@
 #include <sys/uio.h>
 #include <sys/time.h>
 #include <sys/utsname.h>
-#include "../list_template.h"
+#include "list_template.h"
 #include "filesystem.h"
-#include "../bool.h"
-#include "../trace_metadata_util.h"
-#include "../trace_parser.h"
-#include "../min_max.h"
-#include "../array_length.h"
+#include "bool.h"
+#include "trace_metadata_util.h"
+#include "trace_parser.h"
+#include "min_max.h"
+#include "array_length.h"
 #include <syslog.h>
 #include <time.h>
 #include <sys/sysinfo.h>
-#include "../trace_lib.h"
-#include "../trace_user.h"
+#include "trace_lib.h"
+#include "trace_user.h"
 
 #define MAX_FILTER_SIZE (10)
 #define METADATA_IOVEC_SIZE 2*(MAX_METADATA_SIZE/TRACE_RECORD_PAYLOAD_SIZE+1)

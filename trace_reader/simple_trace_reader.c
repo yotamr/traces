@@ -1,12 +1,12 @@
-#include "../trace_parser.h"
+#include "trace_parser.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
 #include <getopt.h>
-#include "../list_template.h"
-#include "../array_length.h"
+#include "list_template.h"
+#include "array_length.h"
 
 typedef char trace_filename_t[0x100];
 CREATE_LIST_PROTOTYPE(FilenameList, trace_filename_t)
