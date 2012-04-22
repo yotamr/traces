@@ -22,7 +22,7 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 extern "C" {
 #endif
 
-#define TRACE_SHM_ID "_trace_shm_"    
+#include "config.h"
 #include "trace_defs.h"
 #include <sys/syscall.h>
 #include <time.h>    

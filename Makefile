@@ -28,8 +28,8 @@ trace_reader/simple_trace_reader: $(LIBTRACE_OBJS) trace_reader/simple_trace_rea
 	gcc -L. trace_reader/simple_trace_reader.o -ltrace -o trace_reader/simple_trace_reader
 
 interactive_reader/_trace_parser_ctypes.py: include/trace_parser.h
-	h2xml  -c -I. trace_parser.h -o _trace_parser_ctypes.xml
-	xml2py -k f -k e -k s _trace_parser_ctypes.xml > interactive_reader/_trace_parser_ctypes.py
+	h2xml.py  -c -I. include/trace_parser.h -o _trace_parser_ctypes.xml
+	xml2py.py -k f -k e -k s _trace_parser_ctypes.xml > interactive_reader/_trace_parser_ctypes.py
 	rm _trace_parser_ctypes.xml
 
 trace_instrumentor/trace_instrumentor.o: CXXFLAGS := $(shell $(LLVM_CONFIG) --cxxflags) -Iinclude/ $(TRACE_CLANG_INCLUDE_PATH:%=-I%)

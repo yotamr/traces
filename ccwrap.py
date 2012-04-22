@@ -109,8 +109,8 @@ def main():
         cpp_args.extend(["-w", "-D", "_GNU_SOURCE"])
         
     cpp_args.extend(["-D", "__TRACE_INSTRUMENTATION"])
-    cpp_args.extend(["-include", os.path.join(os.path.dirname(sys.argv[0]),  "trace_lib.h")])
-    cpp_args.extend(["-include", os.path.join(os.path.dirname(sys.argv[0]),  "trace_user.h")])
+    cpp_args.extend(["-include", os.path.join(os.path.dirname(sys.argv[0]),  "include/trace_lib.h")])
+    cpp_args.extend(["-include", os.path.join(os.path.dirname(sys.argv[0]),  "include/trace_user.h")])
 
     out_pp_file = pp_file + ".i"
     ret = spawn(cpp_args)
