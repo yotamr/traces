@@ -24,7 +24,6 @@ plugin_path = os.getenv('TRACE_INSTRUMENTOR', os.path.join(os.path.dirname(sys.a
 clang_path = os.getenv('TRACE_CLANG_PATH', "clang")
 
 def spawn(args):
-    print "spawn %s" % " ".join( args)
     return os.spawnvp(os.P_WAIT, args[0], args)
 
 class Error(Exception):
@@ -39,7 +38,6 @@ def translate(pp_file, out_pp_file, language, cflags):
     args.extend(cflags)
     args.extend(["-load", plugin_path, "-plugin", "trace-instrument"])
     try:
-        print "subprocess: %s" % " ".join(args)
         output = subprocess.check_output(args, stderr = subprocess.STDOUT)
     except subprocess.CalledProcessError, e:
         print 'clang returned', e.returncode
