@@ -5,7 +5,7 @@ from datetime import datetime
 import _trace_parser_ctypes as _cparser_defs
 from _trace_parser_ctypes import TRACE_MATCHER_TRUE, TRACE_MATCHER_OR, TRACE_MATCHER_AND, TRACE_MATCHER_NOT, TRACE_MATCHER_PID, \
      TRACE_MATCHER_TID, TRACE_MATCHER_TIMERANGE, TRACE_MATCHER_LOGID, TRACE_MATCHER_SEVERITY, TRACE_MATCHER_FUNCTION, TRACE_MATCHER_LOG_PARAM_VALUE, \
-     TRACE_MATCHER_TYPE, TRACE_MATCHER_LOG_NAMED_PARAM_VALUE, TRACE_MATCHER_PROCESS_NAME
+     TRACE_MATCHER_TYPE, TRACE_MATCHER_LOG_NAMED_PARAM_VALUE, TRACE_MATCHER_PROCESS_NAME, TRACE_MATCHER_NESTING
 
 from Bunch import Bunch
 from _ast import UnaryOp, BoolOp, And, Or, Not, Compare, Eq, Name, Num, Call, Str, Lt
@@ -43,8 +43,16 @@ def severity_name_to_severity_value(severity_name):
 def make_bound_handler(parser_obj):
     def event_handler(parser, event_type, event_data, arg):
         parser_obj.record_ready = False
+
+
+        if event_type == _cparser_defs.TRACE_PARSER_FOUND_METADATA:
+            if parser_obj._event_handler:
+                parser_obj._event_handler('metadata_updated')
+            return
+
         if event_type not in (_cparser_defs.TRACE_PARSER_COMPLETE_TYPED_RECORD_PROCESSED, _cparser_defs.TRACE_PARSER_MATCHED_RECORD):
             return
+
 
         complete_record_ptr = cast(c_void_p(event_data), POINTER(_cparser_defs.parser_complete_typed_record))
         formatted_record = create_string_buffer(1024 * 10)
@@ -52,6 +60,7 @@ def make_bound_handler(parser_obj):
         _traces_so.TRACE_PARSER__format_typed_record(parser, complete_record_ptr.contents.buffer, complete_record_ptr.contents.record, formatted_record, 1024 * 10, byref(format_length))
         parser_obj.record_ready = True
         parser_obj.formatted_record = formatted_record.value
+        
         record_copy = _cparser_defs.trace_record()
         pointer(record_copy)[0] = complete_record_ptr.contents.record[0]
         parser_obj.raw_record = record_copy
@@ -150,6 +159,7 @@ class TraceFilter(object):
                            'tid' : TRACE_MATCHER_TID,
                            'log_id' : TRACE_MATCHER_LOGID,
                            'ts' : TRACE_MATCHER_TIMERANGE,
+                           'nesting' : TRACE_MATCHER_NESTING,
                            'severity' : TRACE_MATCHER_SEVERITY}
 
         if not name in field_to_filter:
@@ -160,6 +170,8 @@ class TraceFilter(object):
         new_filter.type = filter_type
         if filter_type == TRACE_MATCHER_PID:
             new_filter.u.pid = value
+        if filter_type == TRACE_MATCHER_NESTING:
+            new_filter.u.nesting = value
         elif filter_type == TRACE_MATCHER_TID:
             new_filter.u.tid = value
         elif filter_type == TRACE_MATCHER_LOGID:
@@ -243,7 +255,7 @@ class TraceFilter(object):
     def _handle_func_filter(self, func_name, args, keywords):
         func_filter = _cparser_defs.trace_record_matcher_spec_s()
         func_filter.type = TRACE_MATCHER_FUNCTION
-        func_filter.u.function_name = func_name
+        func_filter.u.function_name = func_name.strip()
         self._struct_references.append(func_filter)
         
         func_trace_severity_filter = _cparser_defs.trace_record_matcher_spec_s()
@@ -335,18 +347,18 @@ class ProcessMetadata(Bunch):
     pass
 
 class TraceParser(object):
-    def __init__(self, filename = None):
+    def __init__(self, filename = None, event_handler = None):
         event_handler_prototype = CFUNCTYPE(None, POINTER(_cparser_defs.trace_parser), c_int, c_void_p, c_void_p)
         self.record_ready = False
         self._handler = event_handler_prototype(make_bound_handler(self))
         self._parser_handle = _cparser_defs.trace_parser()
+        self._event_handler = event_handler
 
         if filename:
             _traces_so.TRACE_PARSER__from_file(byref(self._parser_handle), filename, self._handler, byref(c_int()))
         else:
             _traces_so.TRACE_PARSER__from_external_stream(byref(self._parser_handle), self._handler, byref(c_int()))
 
-        self._get_metadata()
 
 
     def _event_handler(self, parser, event_type, event_data, arg):
@@ -354,6 +366,9 @@ class TraceParser(object):
         
     def set_color(self, color_enabled):
         _traces_so.TRACE_PARSER__set_color(byref(self._parser_handle), int(color_enabled))
+
+    def set_show_field_names(self, show_field_names):
+        _traces_so.TRACE_PARSER__set_show_field_names(byref(self._parser_handle), int(show_field_names))
 
     def set_relative_ts(self, relative_ts_enabled):
         _traces_so.TRACE_PARSER__set_relative_ts(byref(self._parser_handle), int(relative_ts_enabled))
@@ -460,7 +475,6 @@ class TraceParser(object):
                 process_metadata.functions.add(raw_metadata.descriptors[i].params[0].const_str)
 
     def _get_metadata(self):
-        _traces_so.TRACE_PARSER__process_all_metadata(byref(self._parser_handle))
         self.metadata = {'all_const_values' : {}}
         for i in xrange(_traces_so.BufferParseContextList__element_count(byref(self._parser_handle.buffer_contexts))):
             process_metadata = ProcessMetadata(enums = {}, functions = set())
@@ -469,6 +483,7 @@ class TraceParser(object):
             self._get_functions(self._parser_handle.buffer_contexts.elements[i], process_metadata)
 
     def get_known_metadata_names(self):
+        self._get_metadata()
         names = self.metadata['all_const_values'].keys()
         for key, value in self.metadata.items():
             if key == 'all_const_values':
@@ -528,6 +543,14 @@ class TraceParser(object):
     def find_next_by_expression(self, matcher):
         import time
         result = _traces_so.TRACE_PARSER__find_next_record_by_expression(byref(self._parser_handle), byref(matcher))
+        if result == 0:
+            return True
+        else:
+            return False
+
+    def find_previous_by_expression(self, matcher):
+        import time
+        result = _traces_so.TRACE_PARSER__find_previous_record_by_expression(byref(self._parser_handle), byref(matcher))
         if result == 0:
             return True
         else:

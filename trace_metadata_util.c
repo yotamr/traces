@@ -31,9 +31,11 @@ static void relocate_descriptor_parameters(void *old_base, void *new_base, struc
 {
     struct trace_param_descriptor *param;
     param = descriptor->params;
+
     while (param->flags != 0) {
-        if (param->flags & (param->flags & (TRACE_PARAM_FLAG_CSTR | TRACE_PARAM_FLAG_ENUM | TRACE_PARAM_FLAG_RECORD))) {
-            relocate_ptr((unsigned long long) old_base, (unsigned long long) new_base, (unsigned long long *) &param->const_str);
+
+        if (param->flags & ((TRACE_PARAM_FLAG_CSTR | TRACE_PARAM_FLAG_ENUM | TRACE_PARAM_FLAG_NESTED_LOG))) {
+            relocate_ptr((unsigned long long) old_base, (unsigned long long) new_base, (unsigned long long *) &param->str);
         }
 
         if (param->param_name) {
@@ -60,7 +62,7 @@ void relocate_metadata(void *original_base_address, void *new_base_address, char
 
     struct trace_log_descriptor *log_descriptors = (struct trace_log_descriptor *) data;
     struct trace_type_definition *type_definitions = (struct trace_type_definition *) (data + (sizeof(struct trace_log_descriptor) * descriptor_count));
-    
+
     for (i = 0; i < descriptor_count; i++) {
         relocate_ptr((unsigned long long)original_base_address, (unsigned long long)new_base_address, (unsigned long long *) &log_descriptors[i].params);
         relocate_descriptor_parameters(original_base_address, new_base_address, &log_descriptors[i]);

@@ -50,7 +50,7 @@ static void copy_log_params_to_allocated_buffer(struct trace_log_descriptor *log
     struct trace_param_descriptor *param = log_desc->params;
     while (param->flags != 0) {
         __builtin_memcpy(*params, param, sizeof(struct trace_param_descriptor));
-        if (param->flags & (TRACE_PARAM_FLAG_CSTR | TRACE_PARAM_FLAG_ENUM | TRACE_PARAM_FLAG_RECORD | TRACE_PARAM_FLAG_TYPEDEF)) {
+        if (param->flags & (TRACE_PARAM_FLAG_CSTR | TRACE_PARAM_FLAG_ENUM | TRACE_PARAM_FLAG_NESTED_LOG)) {
             ALLOC_STRING((*params)->str, param->str);
         }
 

@@ -23,6 +23,10 @@ extern "C" {
 #endif
 
 void TRACE__fini(void);// __attribute__((destructor));
+
+#ifndef __repr__    
+#define __repr__ _trace_represent()
+#endif
     
 typedef unsigned char hex_t;
 #define HEX_REPR(x, size) (hex_t (*)[size]) x
@@ -35,7 +39,7 @@ typedef unsigned char hex_t;
 #define CALL_INVALID __attribute__((error("traces: Trace symbol name should not appear in final code, this is a bug. Contact Yotam Rubin <yotamrubin@gmail.com> and report a bug")))
 #ifdef __cplusplus
 
-    
+void REPR(...) CALL_INVALID;    
 void DEBUG(...) CALL_INVALID;
 void WARN(...) CALL_INVALID;
 void INFO(...) CALL_INVALID;
@@ -43,6 +47,7 @@ void ERROR(...) CALL_INVALID;
 void FATAL(...) CALL_INVALID;
     
 #else
+void REPR() CALL_INVALID;
 void DEBUG() CALL_INVALID;
 void WARN() CALL_INVALID;
 void INFO() CALL_INVALID;
@@ -51,13 +56,15 @@ void FATAL() CALL_INVALID;
 
 #endif /* __cplusplus */
 #else /* __TRACE_INSTRUMENTATION */
-#ifdef __cplusplus    
+#ifdef __cplusplus
+void REPR(...);
 void DEBUG(...);
 void WARN(...);
 void INFO(...);
 void ERROR(...);
 void FATAL(...);    
 #else
+void REPR();
 void DEBUG();
 void WARN();
 void INFO();

@@ -188,11 +188,11 @@ static int dump_iovector_to_parser(struct trace_dumper_configuration_s *conf, st
             tmp_ptr += copy_len;
             iovec_base_ptr += copy_len;
             if (tmp_ptr - accumulated_trace_record == sizeof(struct trace_record)) {
-                unsigned int formatted_record_length = 0;
                 char formatted_record[10 * 1024];
-                rc = TRACE_PARSER__process_next_from_memory(parser, (struct trace_record *) accumulated_trace_record, formatted_record, sizeof(formatted_record), &formatted_record_length);
+                unsigned int was_record_formatted = 0;
+                rc = TRACE_PARSER__process_next_from_memory(parser, (struct trace_record *) accumulated_trace_record, formatted_record, sizeof(formatted_record), &was_record_formatted);
                 tmp_ptr = accumulated_trace_record;
-                if (formatted_record_length) {
+                if (was_record_formatted) {
                     if (!conf->syslog) {
                         printf("%s\n", formatted_record);
                     } else {
@@ -655,20 +655,17 @@ static int find_oldest_trace_file(struct trace_dumper_configuration_s *conf, cha
     dir = opendir(conf->logs_base);
 
     if (dir == NULL) {
-        printf("Oh no\n");
         return -1;
     }
     
     while (TRUE) {
         ent = readdir(dir);
         if (NULL == ent) {
-            printf("Done\n");
             goto Exit;
         }
 
         tmp_timestamp = get_trace_file_timestamp(ent->d_name);
         if (tmp_timestamp < 0) {
-            printf("Bad timestamp\n");
             continue;
         }
         if (min_timestamp > tmp_timestamp) {
@@ -997,7 +994,6 @@ static int trace_flush_buffers(struct trace_dumper_configuration_s *conf)
         }
         
         calculate_delta(mapped_records, &delta, &delta_a, &delta_b);
-        INFO("Delta", delta);
 		if (delta == 0) {
             if (mapped_buffer->dead) {
                 discard_buffer(conf, mapped_buffer);
@@ -1032,11 +1028,9 @@ static int trace_flush_buffers(struct trace_dumper_configuration_s *conf)
     dump_header_rec.u.dump_header.first_chunk_offset = conf->record_file.records_written + 1;
 
 	if (cur_ts < conf->next_flush_ts) {
-        INFO("Not going to flush");
 		return 0;
 	}
 
-    WARN("Will flush", total_written_records);
     return possibly_write_iovecs(conf, num_iovecs, total_written_records, cur_ts);
 }
 
@@ -1186,7 +1180,7 @@ static const struct option longopts[] = {
 	{ "filter", required_argument, 0, 'f'},
 	{ "online", 0, 0, 'o'},
     { "debug-online", 0, 0, 'd'},
-    { "base-path", required_argument, 0, 'b'},
+    { "logdir", required_argument, 0, 'b'},
 	{ "no-color", 0, 0, 'n'},
     { "syslog", 0, 0, 's'},
     { "pid", required_argument, 0, 'p'},

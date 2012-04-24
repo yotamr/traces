@@ -28,6 +28,7 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 
      
 #define TRACE_SEVERITY_DEF       \
+     TRACE_SEV_X(0, INVALID)     \
      TRACE_SEV_X(1, FUNC_TRACE)  \
      TRACE_SEV_X(2, DEBUG)       \
      TRACE_SEV_X(3, INFO)        \
@@ -40,7 +41,6 @@ enum trace_severity {
 	TRACE_SEV_##name  = num,
 
 TRACE_SEVERITY_DEF
-        TRACE_SEV__INVALID = 0,
         TRACE_SEV__MIN = 1,
         TRACE_SEV__MAX = 6
 #undef TRACE_SEV_X
@@ -70,7 +70,7 @@ static inline int trace_strcmp(const char *s1, const char *s2)
 static inline enum trace_severity trace_function_name_to_severity(const char *function_name) {
     TRACE_SEVERITY_DEF;
     #undef TRACE_SEV_X
-    return TRACE_SEV__INVALID;
+    return TRACE_SEV_INVALID;
 }
 
 enum trace_rec_type {
@@ -199,11 +199,12 @@ enum trace_param_desc_flags {
 	TRACE_PARAM_FLAG_HEX      = 0x200,
 	TRACE_PARAM_FLAG_ZERO     = 0x400,
     TRACE_PARAM_FLAG_ENUM     = 0x800,
-    TRACE_PARAM_FLAG_RECORD   = 0x1000,
+    TRACE_PARAM_FLAG_NESTED_LOG   = 0x1000,
     TRACE_PARAM_FLAG_ENTER    = 0x2000,
     TRACE_PARAM_FLAG_LEAVE    = 0x4000,
     TRACE_PARAM_FLAG_TYPEDEF  = 0x8000,
     TRACE_PARAM_FLAG_NAMED_PARAM  = 0x10000,
+    TRACE_PARAM_FLAG_RECORD  = 0x20000,
 };
 
 struct trace_param_descriptor {

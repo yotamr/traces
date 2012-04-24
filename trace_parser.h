@@ -104,6 +104,7 @@ enum trace_record_matcher_type {
     TRACE_MATCHER_LOG_PARAM_VALUE,
     TRACE_MATCHER_LOG_NAMED_PARAM_VALUE,
     TRACE_MATCHER_PROCESS_NAME,
+    TRACE_MATCHER_NESTING,
 };
 
 typedef struct trace_record_matcher_spec_s trace_record_matcher_spec_s;
@@ -123,6 +124,7 @@ struct trace_record_matcher_spec_s {
         char type_name[0x100];
         char process_name[0x100];
         unsigned long long param_value;
+        unsigned short nesting;
         
         struct trace_matcher_named_param_value {
             char param_name[0x100];
@@ -155,6 +157,7 @@ typedef struct trace_parser {
     int always_hex;
     int indent;
     int relative_ts;
+    int show_field_names;
     struct trace_record_matcher_spec_s record_filter;
     unsigned int ignored_records_count;
     enum trace_input_stream_type stream_type;
@@ -169,15 +172,16 @@ void TRACE_PARSER__fini(trace_parser_t *parser);
 void TRACE_PARSER__set_color(trace_parser_t *parser, int has_color);
 void TRACE_PARSER__set_indent(trace_parser_t *parser, int indent);
 void TRACE_PARSER__set_verbose(trace_parser_t *parser, int verbose);
+void TRACE_PARSER__set_show_field_names(trace_parser_t *parser, int show_field_names);
 void TRACE_PARSER__set_relative_ts(trace_parser_t *parser, int relative_ts);
-int TRACE_PARSER__process_all_metadata(trace_parser_t *parser);
+int TRACE_PARSER__dump_all_metadata(trace_parser_t *parser);
 void TRACE_PARSER__set_filter(trace_parser_t *parser, struct trace_record_matcher_spec_s *filter);
 int TRACE_PARSER__find_next_record_by_expression(trace_parser_t *parser, struct trace_record_matcher_spec_s *expression);
 int TRACE_PARSER__find_previous_record_by_expression(trace_parser_t *parser, struct trace_record_matcher_spec_s *expression);
-int TRACE_PARSER__format_typed_record(trace_parser_t *parser, struct trace_parser_buffer_context *context, struct trace_record *record, char *formatted_record, unsigned int formatted_record_size, unsigned int *formatted_record_length);
+int TRACE_PARSER__format_typed_record(trace_parser_t *parser, struct trace_parser_buffer_context *context, struct trace_record *record, char *formatted_record, unsigned int formatted_record_size);
 int TRACE_PARSER__dump(trace_parser_t *parser);
 int TRACE_PARSER__dump_statistics(trace_parser_t *parser);
-int TRACE_PARSER__process_next_from_memory(trace_parser_t *parser, struct trace_record *rec, char *formatted_record, unsigned int formatted_record_size, unsigned int *formatted_record_length);
+int TRACE_PARSER__process_next_from_memory(trace_parser_t *parser, struct trace_record *rec, char *formatted_record, unsigned int formatted_record_size, unsigned int *record_formatted);
 long long TRACE_PARSER__seek(trace_parser_t *parser, long long offset, int whence);
 unsigned long long TRACE_PARSER__seek_to_time(trace_parser_t *parser, unsigned long long ts, int *error_occurred);
 int TRACE_PARSER__matcher_spec_from_severity_mask(unsigned int severity_mask, struct trace_record_matcher_spec_s filter[], unsigned int filter_count);

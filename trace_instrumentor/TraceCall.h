@@ -43,13 +43,16 @@ using namespace clang;
 
 namespace {
 
+class TraceCall;    
 class TraceParam {
 public:
+    llvm::raw_ostream &Out;
     ASTContext &ast;
     Rewriter *Rewrite;
     std::set<const Type *> &referencedTypes;
-
-TraceParam(ASTContext &_ast, Rewriter *rewriter, std::set<const Type *> &_referencedTypes) : ast(_ast), Rewrite(rewriter), referencedTypes(_referencedTypes), type_name("0") { clear(); };
+    std::set<TraceCall *> &globalTraces;
+    
+TraceParam(llvm::raw_ostream &out, ASTContext &_ast, Rewriter *rewriter, std::set<const Type *> &_referencedTypes, std::set<TraceCall *> &global_traces): Out(out), ast(_ast), Rewrite(rewriter), referencedTypes(_referencedTypes), globalTraces(global_traces), type_name("0"), trace_call(NULL) { clear(); };
     bool fromType(QualType type, bool fill_unknown);
     bool fromExpr(const Expr *E, bool interpret_char_ptr_as_string);
     unsigned long flags;
@@ -58,8 +61,10 @@ TraceParam(ASTContext &_ast, Rewriter *rewriter, std::set<const Type *> &_refere
     std::string size_expression;
     std::string type_name;
     std::string param_name;
+    TraceCall *trace_call;
     bool is_pointer;
     bool is_reference;
+    bool method_generated;
    
     unsigned int size;
     void clear(void) { flags = 0; const_str = std::string(); expression = std::string(); is_pointer = false; is_reference = false;}
@@ -72,6 +77,8 @@ TraceParam(ASTContext &_ast, Rewriter *rewriter, std::set<const Type *> &_refere
         expression       = source.expression;
         size_expression  = source.size_expression;
         size             = source.size;
+        trace_call       = source.trace_call;
+        
         type_name = type_name;
         is_pointer = is_pointer;
         is_reference = is_reference;
@@ -123,6 +130,10 @@ TraceParam(ASTContext &_ast, Rewriter *rewriter, std::set<const Type *> &_refere
         }
         if (flags & TRACE_PARAM_FLAG_LEAVE) {
             trace_flags << " | TRACE_PARAM_FLAG_LEAVE";
+        }
+
+        if (flags & TRACE_PARAM_FLAG_NESTED_LOG) {
+            trace_flags << " | TRACE_PARAM_FLAG_NESTED_LOG";
         }
 
         return trace_flags.str();
@@ -196,13 +207,19 @@ private:
 
 class TraceCall {
 public:
-TraceCall(llvm::raw_ostream &out, ASTContext &_ast, Rewriter *rewriter, std::set<const Type *> &referenced_types) : ast(_ast), Out(out), Rewrite(rewriter), referencedTypes(referenced_types) { };
+TraceCall(llvm::raw_ostream &out, ASTContext &_ast, Rewriter *rewriter, std::set<const Type *> &referenced_types, std::set<TraceCall *> &global_traces) : method_generated(false), trace_call_name("tracelog"), ast(_ast), Out(out), Rewrite(rewriter), referencedTypes(referenced_types), globalTraces(global_traces){ };
+
     bool fromCallExpr(CallExpr *exp);
     void addTraceParam(TraceParam &param) { args.push_back(param); }
     void setSeverity(enum trace_severity _severity) { severity = _severity; }
     void setKind(const char *_kind) { kind = _kind; }
     std::string getExpansion();
     void expand();
+    void expandWithoutDeclaration();
+    std::string getTraceDeclaration();
+    
+    bool method_generated;
+    std::string trace_call_name;
     
 private:
     ASTContext &ast;
@@ -213,6 +230,8 @@ private:
     const char *kind;
     Rewriter *Rewrite;
     std::set<const Type *> &referencedTypes;
+    std::set<TraceCall *> &globalTraces;
+
     enum trace_severity functionNameToTraceSeverity(std::string function_name);
     bool parseTraceParams(CallExpr *S, std::vector<TraceParam> &args);
     std::string getLiteralString(const CastExpr *expr);
@@ -222,6 +241,7 @@ private:
 
     std::string getTypeDefinitionExternDeclratations();
     std::string genMIN(std::string &a, std::string &b);
+    std::string writeSimpleValue(std::string &expression, std::string &type_name, bool is_pointer, bool is_reference);
     std::string commitAndAllocateRecord(enum trace_severity severity);
     std::string getRecord(enum trace_severity severity);
     std::string initializeTypedRecord(enum trace_severity severity);
@@ -230,7 +250,7 @@ private:
 
 
     std::string getTraceWriteExpression();
-    std::string getTraceDeclaration();
+    std::string getFullTraceWriteExpression();
 };
 }
 

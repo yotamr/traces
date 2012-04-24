@@ -15,7 +15,8 @@ CREATE_LIST_IMPLEMENTATION(FilenameList, trace_filename_t)
 enum op_type_e {
     OP_TYPE_INVALID,
     OP_TYPE_DUMP_STATS,
-    OP_TYPE_DUMP_FILE
+    OP_TYPE_DUMP_FILE,
+    OP_TYPE_DUMP_METADATA
 };
 
 struct trace_reader_conf {
@@ -23,6 +24,7 @@ struct trace_reader_conf {
     unsigned int severity_mask;
     int tail;
     int no_color;
+    int show_field_names;
     int relative_ts;
     long long from_time;
     FilenameList files_to_process;
@@ -37,8 +39,10 @@ static const char *usage =
     " -n  --no-color             Disable colored output                                         \n"
     " -e  --dump-debug           Dump all debug entries                                         \n"
     " -f  --dump-functions       Dump all debug entries and fucntion calls                      \n"
-    " -t  --time                 Dump all records beginning at timestamp (in usecs)             \n"
+    " -t  --time                 Dump all records beginning at timestamp (in nsecs)             \n"
+    " -o  --show-field-names     Show field names for all trace records                         \n"
     " -r  --relative-timestamp   Print timestamps relative to boot time                         \n"
+    " -m  --dump-metadata        Dump metadata in specified files                               \n"
     "\n";
 
 static const struct option longopts[] = {
@@ -47,6 +51,8 @@ static const struct option longopts[] = {
 	{ "no-color", 0, 0, 'n'},
     { "dump-debug", 0, 0, 'e'},
     { "dump-functions", 0, 0, 'f'},
+    { "dump-metadata", 0, 0, 'm'},
+    { "show-field-name", 0, 0, 'o'},
     { "relative-timestamp", required_argument, 0, 't'},
 	{ 0, 0, 0, 0}
 };
@@ -56,7 +62,7 @@ static void print_usage(void)
     printf(usage, "simple_trace_reader");
 }
 
-static const char shortopts[] = "ft:hdnesr";
+static const char shortopts[] = "moft:hdnesr";
 
 static int parse_command_line(struct trace_reader_conf *conf, int argc, char **argv)
 {
@@ -94,6 +100,13 @@ static int parse_command_line(struct trace_reader_conf *conf, int argc, char **a
                 return -1;
             }
             break;
+        case 'm':
+            conf->op_type = OP_TYPE_DUMP_METADATA;
+            break;
+        case 'o':
+            conf->show_field_names = TRUE;
+            break;
+            
         case '?':
             print_usage();
             return -1;
@@ -141,14 +154,21 @@ static void set_parser_params(struct trace_reader_conf *conf, trace_parser_t *pa
     } else {
         TRACE_PARSER__set_relative_ts(parser, 0);
     }
+
+    if (conf->show_field_names) {
+        TRACE_PARSER__set_show_field_names(parser, 1);
+    } else {
+        TRACE_PARSER__set_show_field_names(parser, 0);
+    }
 }
 
 static int dump_all_files(struct trace_reader_conf *conf)
 {
-    trace_parser_t parser;
     int i;
     trace_filename_t filename;
     int error_occurred;
+    trace_parser_t parser;
+    
     for (i = 0; i < FilenameList__element_count(&conf->files_to_process); i++) {
         FilenameList__get_element(&conf->files_to_process, i, &filename);
 
@@ -176,25 +196,54 @@ static int dump_all_files(struct trace_reader_conf *conf)
 
 static int dump_statistics_for_all_files(struct trace_reader_conf *conf)
 {
-    trace_parser_t parser;
     int i;
     trace_filename_t filename;
+    trace_parser_t parser;
     
     for (i = 0; i < FilenameList__element_count(&conf->files_to_process); i++) {
         FilenameList__get_element(&conf->files_to_process, i, &filename);
 
         int rc = TRACE_PARSER__from_file(&parser, filename, read_event_handler, NULL);
+        set_parser_params(conf, &parser);
+
         if (0 != rc) {
             fprintf(stderr, "Error opening file %s\n", filename);
             return -1;
         }
 
         TRACE_PARSER__dump_statistics(&parser);
+        TRACE_PARSER__fini(&parser);
+
     }
 
     return 0;
 }
+
+static int dump_metadata_for_files(struct trace_reader_conf *conf)
+{
+    int i;
+    trace_filename_t filename;
+    trace_parser_t parser;
     
+    for (i = 0; i < FilenameList__element_count(&conf->files_to_process); i++) {
+        FilenameList__get_element(&conf->files_to_process, i, &filename);
+
+        int rc = TRACE_PARSER__from_file(&parser, filename, read_event_handler, NULL);
+        set_parser_params(conf, &parser);
+
+        if (0 != rc) {
+            fprintf(stderr, "Error opening file %s\n", filename);
+            return -1;
+        }
+
+        TRACE_PARSER__dump_all_metadata(&parser);
+        TRACE_PARSER__fini(&parser);
+
+    }
+
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     struct trace_reader_conf conf;
@@ -209,7 +258,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "simple_trace_reader: Must specify input files\n");
         return 1;
     }
-    
+
     switch (conf.op_type) {
     case OP_TYPE_DUMP_STATS:
         return dump_statistics_for_all_files(&conf);
@@ -217,6 +266,9 @@ int main(int argc, char **argv)
         break;
     case OP_TYPE_DUMP_FILE:
         return dump_all_files(&conf);
+        break;
+    case OP_TYPE_DUMP_METADATA:
+        return dump_metadata_for_files(&conf);
         break;
     case OP_TYPE_INVALID:
         fprintf(stderr, "simple_trace_reader: Must specify operation type (-s or -d)\n");

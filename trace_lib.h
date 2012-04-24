@@ -27,6 +27,11 @@ extern "C" {
 #include <sys/syscall.h>
 #include <time.h>    
 
+#ifdef __repr__
+#undef __repr__
+#endif
+    
+#define __repr__ _trace_represent(unsigned int *buf_left, struct trace_record *_record, struct trace_record **__record_ptr, unsigned char **typed_buf)
 #ifndef	_UNISTD_H    
 #ifdef __cplusplus     
     extern long int syscall (long int __sysno, ...) throw ();
@@ -59,7 +64,7 @@ static inline unsigned short int trace_get_tid(void)
 	tid_cache = syscall(__NR_gettid);
 	return tid_cache;
 }
-
+    
 static inline unsigned long long trace_get_nsec(void)
 {
      struct timespec tv;

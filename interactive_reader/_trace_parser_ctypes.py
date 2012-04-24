@@ -204,6 +204,7 @@ TRACE_MATCHER_TYPE = 11
 TRACE_MATCHER_LOG_PARAM_VALUE = 12
 TRACE_MATCHER_LOG_NAMED_PARAM_VALUE = 13
 TRACE_MATCHER_PROCESS_NAME = 14
+TRACE_MATCHER_NESTING = 15
 trace_record_matcher_type = c_int # enum
 class trace_record_matcher_data_u(Union):
     pass
@@ -240,6 +241,7 @@ trace_record_matcher_data_u._fields_ = [
     ('type_name', c_char * 256),
     ('process_name', c_char * 256),
     ('param_value', c_ulonglong),
+    ('nesting', c_ushort),
     ('named_param_value', trace_matcher_named_param_value),
     ('binary_operator_parameters', trace_record_matcher_binary_operator_params),
     ('unary_operator_parameters', trace_record_matcher_unary_operator_params),
@@ -282,6 +284,7 @@ trace_parser._fields_ = [
     ('always_hex', c_int),
     ('indent', c_int),
     ('relative_ts', c_int),
+    ('show_field_names', c_int),
     ('record_filter', trace_record_matcher_spec_s),
     ('ignored_records_count', c_uint),
     ('stream_type', trace_input_stream_type),
@@ -540,7 +543,8 @@ __all__ = ['TRACE_TYPE_ID_ENUM', 'N11__mbstate_t4DOT_26E',
            '__pthread_internal_list', 'TRACE_MATCHER_PID',
            'trace_input_stream_type', 'TRACE_MATCHER_NOT', '__time_t',
            'buffer_dump_context_s', '_G_fpos64_t',
-           'trace_record_metadata', 'trace_enum_value', '_IO_jump_t',
+           'trace_record_metadata', 'BufferParseContextList',
+           'trace_enum_value', '_IO_jump_t',
            'TRACE_INPUT_STREAM_TYPE_SEEKABLE_FILE',
            'RecordsAccumulatorList_s', 'TRACE_MATCHER_PROCESS_NAME',
            '__io_close_fn', '__va_list_tag', 'sigevent',
@@ -558,7 +562,7 @@ __all__ = ['TRACE_TYPE_ID_ENUM', 'N11__mbstate_t4DOT_26E',
            'TRACE_LOG_DESCRIPTOR_KIND_FUNC_LEAVE', 'timespec',
            'N16pthread_rwlock_t3DOT_9E',
            'parser_complete_typed_record', '__sched_param',
-           'BufferParseContextList', 'trace_record_u', '__off_t',
+           'TRACE_MATCHER_NESTING', 'trace_record_u', '__off_t',
            'record_dump_context_s', 'TRACE_PARSER_SEARCHING_METADATA',
            '__ssize_t', 'obstack', 'trace_record_file_header',
            '_IO_cookie_file',

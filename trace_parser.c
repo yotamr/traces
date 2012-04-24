@@ -108,6 +108,11 @@ void TRACE_PARSER__always_hex(trace_parser_t *parser, int always_hex)
     parser->always_hex = always_hex;
 }
 
+void TRACE_PARSER__set_show_field_names(trace_parser_t *parser, int show_field_names)
+{
+    parser->show_field_names = show_field_names;
+}
+
 
 static bool_t match_severity_with_match_expression(struct trace_record_matcher_spec_s *matcher, enum trace_severity severity);
 
@@ -217,7 +222,7 @@ static int append_metadata(struct trace_parser_buffer_context *context, struct t
     return 0;
 }
 
-static int accumulate_metadata(trace_parser_t *parser, struct trace_record *rec)
+static int accumulate_metadata(trace_parser_t *parser, struct trace_record *rec, trace_parser_event_handler_t handler, void *arg)
 {
     struct trace_parser_buffer_context *context = get_buffer_context_by_pid(parser, rec->pid);
     if (NULL == context) {
@@ -234,6 +239,7 @@ static int accumulate_metadata(trace_parser_t *parser, struct trace_record *rec)
         context->descriptors = (struct trace_log_descriptor *) context->metadata->data;
         context->types = (struct trace_type_definition *) ((char *) context->metadata->data + (sizeof(struct trace_log_descriptor)) * context->metadata->log_descriptor_count);
         strncpy(context->name, context->metadata->name, sizeof(context->name));
+        handler(parser, TRACE_PARSER_FOUND_METADATA, context, arg);
         return 0;
     } else {
         return append_metadata(context, rec);
@@ -299,7 +305,8 @@ static struct trace_record *accumulate_record(trace_parser_t *parser, struct tra
     if (forward) {
         memcpy(accumulator->accumulated_data + accumulator->data_offset, rec->u.payload, TRACE_RECORD_PAYLOAD_SIZE);
     } else {
-        memmove(accumulator->accumulated_data + TRACE_RECORD_HEADER_SIZE + sizeof(rec->u.payload), (char *) rec, accumulator->data_offset);
+        memmove(accumulator->accumulated_data + TRACE_RECORD_HEADER_SIZE + sizeof(rec->u.payload), accumulator->accumulated_data + TRACE_RECORD_HEADER_SIZE, accumulator->data_offset - TRACE_RECORD_HEADER_SIZE);
+        memcpy(accumulator->accumulated_data + TRACE_RECORD_HEADER_SIZE, rec->u.payload, sizeof(rec->u.payload));
     }
     
     accumulator->data_offset += sizeof(rec->u.payload);
@@ -312,42 +319,52 @@ static struct trace_record *accumulate_record(trace_parser_t *parser, struct tra
     }
 }
 
-struct function_entry_count {
-    char name[256];
-    unsigned int entry_count;
-    unsigned int leave_count;
+struct log_occurrences {
+    char template[512];
+    unsigned int occurrences;
 };
 
 
-struct function_stats {
-    struct function_entry_count functions[0x10000];
-    unsigned int count;
-    unsigned long long function_byte_count;
-    unsigned long long debug_byte_count;
-    unsigned int inside_record_entry;
+struct log_stats {
+    struct log_occurrences logs[0x10000];
+    unsigned int unique_count;
+    unsigned int record_count;
 };
 
-static void dump_stats(struct function_stats *stats)
+int compare_log_occurrence_entries(const void *a, const void *b)
 {
-    unsigned int i;
-    printf("Number of stats: %d\n", stats->count);
-    for (i = 0; i < stats->count; i++) {
-        printf("Entry %s: %d\n", stats->functions[i].name, stats->functions[i].entry_count);
-        printf("Leave %s: %d\n", stats->functions[i].name, stats->functions[i].leave_count);
+    struct log_occurrences *log_occurrence_a = (struct log_occurrences *) a;
+    struct log_occurrences *log_occurrence_b = (struct log_occurrences *) b;
+
+    if (log_occurrence_a->occurrences < log_occurrence_b->occurrences) {
+        return -1;
     }
 
-    printf("Function entry records byte count: %lld\n", stats->function_byte_count);
-    printf("Debug records byte count: %lld\n", stats->debug_byte_count);
+    if (log_occurrence_a->occurrences == log_occurrence_b->occurrences) {
+        return 0;
+    }
+
+    return 1;
 }
 
-#define MAX_FUNCTION_COUNT
-
-static int find_function_stats(struct function_stats *stats, const char *name, struct function_entry_count **out)
+static void dump_stats(struct log_stats *stats)
 {
     unsigned int i;
-    for (i = 0; i < stats->count; i++) {
-        if (strcmp(stats->functions[i].name, name) == 0) {
-            *out = &stats->functions[i];
+    qsort(stats->logs, stats->unique_count, sizeof(stats->logs[0]), compare_log_occurrence_entries);
+    printf("Unique log records count: %d\n", stats->unique_count);
+    printf("Record count: %d\n", stats->record_count);
+
+    for (i = 0; i < stats->unique_count; i++) {
+        printf("%-10d : %-100s\n", stats->logs[i].occurrences, stats->logs[i].template);
+    }
+}
+
+static int find_log_stats(struct log_stats *stats, const char *template, struct log_occurrences **out)
+{
+    unsigned int i;
+    for (i = 0; i < stats->unique_count; i++) {
+        if (strcmp(stats->logs[i].template, template) == 0) {
+            *out = &stats->logs[i];
             return 0;
         }
     }
@@ -359,7 +376,6 @@ struct dump_context_s {
     int tail;
     int current_severity;
     char formatted_record[1024 * 20];
-    unsigned int formatted_record_length;
 };
 
 void format_timestamp(trace_parser_t *parser, unsigned long long ts, char *timestamp, unsigned int timestamp_size)
@@ -376,10 +392,19 @@ void format_timestamp(trace_parser_t *parser, unsigned long long ts, char *times
     }
 }
 
-#define APPEND_FORMATTED_TEXT(...) snprintf(tmp_ptr, formatted_record_size - (tmp_ptr - formatted_record), __VA_ARGS__); tmp_ptr += strlen(tmp_ptr); if (formatted_record_size - (tmp_ptr - formatted_record) == 0) { formatted_record_length = 0; return -1; }
-#define SIMPLE_APPEND_FORMATTED_TEXT(source) strncat(formatted_record, source, formatted_record_size - (tmp_ptr - formatted_record)); tmp_ptr += strlen(source); if (formatted_record_size - (tmp_ptr - formatted_record) <= 0) { formatted_record_length = 0; return -1; }
-
-
+#define APPEND_FORMATTED_TEXT(...) do { char _tmpbuf[0x200]; snprintf(_tmpbuf, sizeof(_tmpbuf), __VA_ARGS__);     \
+                                        unsigned int _srclen = strlen(_tmpbuf);                                   \
+                                              if (total_length + _srclen >= formatted_record_size - 1) return -1; \
+                                        memcpy(formatted_record + total_length, _tmpbuf, _srclen);                \
+                                        total_length += _srclen;                                                  \
+                                       } while (0);
+#define SIMPLE_APPEND_FORMATTED_TEXT(source) do {                             \
+      unsigned int _srclen = strlen(source);                                  \
+      if (total_length + _srclen >= formatted_record_size - 1) return -1;     \
+      memcpy(formatted_record + total_length, source, _srclen);       \
+      total_length += _srclen;                                                \
+    } while (0);
+    
 static void get_type(struct trace_parser_buffer_context *context, const char *type_name, struct trace_type_definition **type)
 {
     struct trace_type_definition *tmp_type = context->types;
@@ -395,6 +420,94 @@ static void get_type(struct trace_parser_buffer_context *context, const char *ty
 
     *type = NULL;
 }
+
+
+#define WRITE_SIMPLE_PDATA_VALUE(_unmodified, _unsigned, _leading_zero, _hex,  typename) \
+do {                                                                                     \
+        const char *fmt_str = _unmodified;                                               \
+        typename v;                                                                      \
+        v = (*(typename *)pdata);                                                        \
+        pdata += sizeof(v);                                                              \
+        if (param->flags & TRACE_PARAM_FLAG_UNSIGNED)                                    \
+            fmt_str = _unsigned;                                                         \
+        else if (param->flags & TRACE_PARAM_FLAG_ZERO)                                   \
+            fmt_str = _leading_zero;                                                     \
+        else if ((param->flags & TRACE_PARAM_FLAG_HEX))                                  \
+            fmt_str = _hex;                                                              \
+                                                                                         \
+        SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD(""));                                   \
+        APPEND_FORMATTED_TEXT(fmt_str, v);                                               \
+        SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));                                 \
+} while (0);
+
+#define HANDLE_CSTR()                                                                    \
+            if (param->const_str) {                                                      \
+                if (((trace_kind == TRACE_LOG_DESCRIPTOR_KIND_FUNC_ENTRY) ||             \
+                     (trace_kind == TRACE_LOG_DESCRIPTOR_KIND_FUNC_LEAVE)) && first) {   \
+                    SIMPLE_APPEND_FORMATTED_TEXT(F_YELLOW_BOLD(""));                     \
+                    SIMPLE_APPEND_FORMATTED_TEXT(param->const_str);                      \
+                    SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));                     \
+                    SIMPLE_APPEND_FORMATTED_TEXT("(");                                   \
+                                                                                         \
+                                                                                         \
+                    first = 0;                                                           \
+                    if ((param + 1)->flags == 0) {                                       \
+                        SIMPLE_APPEND_FORMATTED_TEXT(")");                               \
+                    }                                                                    \
+                                                                                         \
+                    continue;                                                            \
+                } else {                                                                 \
+                    SIMPLE_APPEND_FORMATTED_TEXT(param->const_str);                      \
+                }                                                                        \
+                                                                                         \
+                if ((param + 1)->flags != 0) {                                           \
+                    SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));                     \
+                    SIMPLE_APPEND_FORMATTED_TEXT(delimiter);                             \
+                }                                                                        \
+                continue;                                                                \
+            } else {                                                                     \
+                SIMPLE_APPEND_FORMATTED_TEXT("<cstr?>");                                 \
+            }
+
+#define HANDLE_VSTR()                                                                    \
+            if (param->flags & TRACE_PARAM_FLAG_STR) {                                   \
+                SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD("\""));                         \
+            }                                                                            \
+			                                                                             \
+            while (1) {                                                                  \
+				unsigned char sl = (*(unsigned char *)pdata);                            \
+				unsigned char len = sl & 0x7f;                                           \
+				unsigned char continuation = sl & 0x80;                                  \
+				char strbuf[255];                                                        \
+                                                                                         \
+				memcpy(strbuf, pdata + 1, len);                                          \
+				strbuf[len] = 0;                                                         \
+				pdata += sizeof(len) + len;                                              \
+				if (param->flags & TRACE_PARAM_FLAG_STR) {                               \
+                    SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD(""));                       \
+                    SIMPLE_APPEND_FORMATTED_TEXT(strbuf);                                \
+                    SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));                     \
+				}                                                                        \
+                                                                                         \
+                if (param->flags & TRACE_PARAM_FLAG_STR && !continuation) {              \
+                    SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD(""));                       \
+                    SIMPLE_APPEND_FORMATTED_TEXT("\"");                                  \
+                    SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));                     \
+                    SIMPLE_APPEND_FORMATTED_TEXT(delimiter);                             \
+                }                                                                        \
+                if (!continuation) {                                                     \
+                    break;                                                               \
+                }                                                                        \
+           }
+
+#define WRITE_ENUM_FROM_PDATA()                                                                                              \
+            char enum_val_name[100];                                                                                         \
+            get_enum_val_name(parser, context, param, (*(unsigned int *)pdata), enum_val_name, sizeof(enum_val_name));       \
+            SIMPLE_APPEND_FORMATTED_TEXT(enum_val_name);                                                                     \
+            if ((param + 1)->flags != 0)                                                                                     \
+                SIMPLE_APPEND_FORMATTED_TEXT(delimiter);                                                                     \
+            SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));                                                                 \
+            pdata += sizeof(int);                                                                                           
 
 static void get_enum_val_name(trace_parser_t *parser, struct trace_parser_buffer_context *context, struct trace_param_descriptor *param, unsigned int value, char *val_name, unsigned int val_name_size)
 {
@@ -420,74 +533,27 @@ static void get_enum_val_name(trace_parser_t *parser, struct trace_parser_buffer
     return;
 }
 
-int TRACE_PARSER__format_typed_record(trace_parser_t *parser, struct trace_parser_buffer_context *context, struct trace_record *record, char *formatted_record, unsigned int formatted_record_size, unsigned int *formatted_record_length)
+
+
+static int format_typed_params(trace_parser_t *parser, struct trace_parser_buffer_context *context, struct trace_record_typed *typed_record, char *formatted_record, unsigned int formatted_record_size, int total_length, int *bytes_processed, bool_t describe_params)
 {
+    unsigned int metadata_index = typed_record->log_id;
+    unsigned char *pdata = typed_record->payload;
     struct trace_log_descriptor *log_desc;
     struct trace_param_descriptor *param;
-    char *buffer_name = context->name;
-    char timestamp[0x100];
-    char *tmp_ptr = formatted_record;
 
-    format_timestamp(parser, record->ts, timestamp, sizeof(timestamp));
-    unsigned int metadata_index = record->u.typed.log_id;
-
-    const char *severity_str;
-    if (TRACE_SEV__MIN <= record->severity &&  TRACE_SEV__MAX >= record->severity)
-		severity_str = sev_to_str[record->severity];
-	else
-		severity_str = "???";
-
-    
-    switch (record->severity) {
-    case TRACE_SEV_FUNC_TRACE: severity_str = F_GREY("-----"); break;
-    case TRACE_SEV_DEBUG: severity_str = F_WHITE("DEBUG"); break;
-    case TRACE_SEV_INFO: severity_str = F_GREEN_BOLD("INFO "); break;
-    case TRACE_SEV_WARN: severity_str = F_YELLOW_BOLD("WARN "); break;
-    case TRACE_SEV_ERROR: severity_str = F_RED_BOLD("ERROR"); break;
-    case TRACE_SEV_FATAL: severity_str = F_RED_BOLD("FATAL"); break;
-
-    default: break;
-    }
-
-
-    if (parser->color) {
-        APPEND_FORMATTED_TEXT("%s " _F_MAGENTA("%-20s ") _ANSI_DEFAULTS("%s [") _F_BLUE_BOLD("%5d") _ANSI_DEFAULTS("]") _F_GREY(" : ") _ANSI_DEFAULTS(""),
-                              severity_str, buffer_name, timestamp, record->tid);
-    } else {
-        APPEND_FORMATTED_TEXT("%s %-20s %s [%5d] : ",
-                              severity_str, buffer_name, timestamp, record->tid);
-    }
-
-	if (!context) {
-		SIMPLE_APPEND_FORMATTED_TEXT("<?>");
-		goto exit;
-	}
-
-    unsigned char *pdata = record->u.typed.payload;
-    
     if (metadata_index >= context->metadata->log_descriptor_count) {
         APPEND_FORMATTED_TEXT("L? %d", metadata_index);
-        goto exit;
+        return total_length;
     }
 
     log_desc = &context->descriptors[metadata_index];
+
     enum trace_log_descriptor_kind trace_kind = log_desc->kind;
     int first = 1;
     const char *delimiter = " ";
     if (trace_kind == TRACE_LOG_DESCRIPTOR_KIND_FUNC_ENTRY) {
         delimiter = ", ";
-    }
-
-    if (parser->indent) {
-        int i;
-        if (record->nesting < 0) {
-            APPEND_FORMATTED_TEXT("(nesting = %d) ", record->nesting);
-            record->nesting = 0;
-        }
-
-        for (i = 0; i < record->nesting; i++) {
-            SIMPLE_APPEND_FORMATTED_TEXT("    ");
-        }
     }
 
     for (param = log_desc->params; (param->flags != 0); param++) {
@@ -497,181 +563,162 @@ int TRACE_PARSER__format_typed_record(trace_parser_t *parser, struct trace_parse
             SIMPLE_APPEND_FORMATTED_TEXT("<-- ");
         }
 
-        if (param->flags & TRACE_PARAM_FLAG_NAMED_PARAM && trace_kind == TRACE_LOG_DESCRIPTOR_KIND_FUNC_ENTRY) {
-            SIMPLE_APPEND_FORMATTED_TEXT(F_WHITE_BOLD(""));
-            SIMPLE_APPEND_FORMATTED_TEXT(param->param_name);
-            SIMPLE_APPEND_FORMATTED_TEXT(" = ");
+        if (param->flags & TRACE_PARAM_FLAG_NAMED_PARAM) {
+            if (trace_kind == TRACE_LOG_DESCRIPTOR_KIND_FUNC_ENTRY || parser->show_field_names) {
+                SIMPLE_APPEND_FORMATTED_TEXT(F_WHITE_BOLD(""));
+                SIMPLE_APPEND_FORMATTED_TEXT(param->param_name);
+                SIMPLE_APPEND_FORMATTED_TEXT(" = ");
+            }
+        }
+
+        if (param->flags & TRACE_PARAM_FLAG_NESTED_LOG) {
+            if (describe_params) {
+                APPEND_FORMATTED_TEXT(F_WHITE_BOLD("{ <%s> } "), param->type_name);
+                SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
+            } else {
+                SIMPLE_APPEND_FORMATTED_TEXT(F_WHITE_BOLD("{ "));
+                int _bytes_processed;
+                total_length = format_typed_params(parser, context, (struct trace_record_typed *) pdata, formatted_record, formatted_record_size, total_length, &_bytes_processed, describe_params);
+                pdata += _bytes_processed;
+                SIMPLE_APPEND_FORMATTED_TEXT(F_WHITE_BOLD(" } "));
+                SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
+            }
         }
         
         if (param->flags & TRACE_PARAM_FLAG_CSTR) {
-            if (param->const_str) {
-                if (((trace_kind == TRACE_LOG_DESCRIPTOR_KIND_FUNC_ENTRY) ||
-                     (trace_kind == TRACE_LOG_DESCRIPTOR_KIND_FUNC_LEAVE)) && first) {
-                    SIMPLE_APPEND_FORMATTED_TEXT(F_YELLOW_BOLD(""));
-                    SIMPLE_APPEND_FORMATTED_TEXT(param->const_str);
-                    SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
-                    SIMPLE_APPEND_FORMATTED_TEXT("(");
-
-                    first = 0;
-                    if ((param + 1)->flags == 0) {
-                        SIMPLE_APPEND_FORMATTED_TEXT(")");
-                    }
-
-                    continue;
-                } else {
-                    SIMPLE_APPEND_FORMATTED_TEXT(param->const_str);
-                }
-
-                if ((param + 1)->flags != 0) {
-                    SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
-                    SIMPLE_APPEND_FORMATTED_TEXT(delimiter);
-                }
-                continue;
-            } else {
-                SIMPLE_APPEND_FORMATTED_TEXT("<cstr?>");
-            }
+            HANDLE_CSTR()
         } else if (param->flags & TRACE_PARAM_FLAG_VARRAY) {
-            if (param->flags & TRACE_PARAM_FLAG_STR) {
-                SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD(""));
-                SIMPLE_APPEND_FORMATTED_TEXT("\"");
-            }
-			
-            while (1) {
-				unsigned char sl = (*(unsigned char *)pdata);
-				unsigned char len = sl & 0x7f;
-				unsigned char continuation = sl & 0x80;
-				char strbuf[255];
-                
-				memcpy(strbuf, pdata + 1, len);
-				strbuf[len] = 0;
-				pdata += sizeof(len) + len;
-				if (param->flags & TRACE_PARAM_FLAG_STR) {
-                    SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD(""));
-                    SIMPLE_APPEND_FORMATTED_TEXT(strbuf);
-                    SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
-				}
-
-                if (param->flags & TRACE_PARAM_FLAG_STR && !continuation) {
-                    SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD(""));
-                    SIMPLE_APPEND_FORMATTED_TEXT("\"");
-                    SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
-                    SIMPLE_APPEND_FORMATTED_TEXT(delimiter);
-                }
-
-                if (!continuation) {
-                    break;
-                }
-
+            if (describe_params) {
+                SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD("<vstr> "));
+                SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
+            } else {
+                HANDLE_VSTR();
             }
         }
         
         if (param->flags & TRACE_PARAM_FLAG_ENUM) {
-            char enum_val_name[100];
-            get_enum_val_name(parser, context, param, (*(unsigned int *)pdata), enum_val_name, sizeof(enum_val_name));
-            SIMPLE_APPEND_FORMATTED_TEXT(enum_val_name);
-            if ((param + 1)->flags != 0)
-                SIMPLE_APPEND_FORMATTED_TEXT(delimiter);
-            
-            SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
-            pdata += sizeof(int);
+            if (describe_params) {
+                APPEND_FORMATTED_TEXT(F_CYAN_BOLD("<%s> "), param->type_name);
+                SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
+            } else {
+                WRITE_ENUM_FROM_PDATA();
+            }
         }
         
         if (param->flags & TRACE_PARAM_FLAG_NUM_8) {
-            const char *fmt_str = "%hh";
-            unsigned short v;
-
-            v = (*(unsigned short *)pdata);
-            pdata += sizeof(v);
-
-            if (param->flags & TRACE_PARAM_FLAG_UNSIGNED)
-                fmt_str = "%hhu";
-            else if (param->flags & TRACE_PARAM_FLAG_ZERO)
-                fmt_str = "%08hhx";
-            else if ((param->flags & TRACE_PARAM_FLAG_HEX))
-                fmt_str = "0x%hhx";
-
-            SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD(""));
-            APPEND_FORMATTED_TEXT(fmt_str, v);
-            if ((param + 1)->flags != 0)
-                SIMPLE_APPEND_FORMATTED_TEXT(delimiter);
-            
-            SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
+            if (describe_params) {
+                SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD("<char>"));
+                SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
+            } else {
+                WRITE_SIMPLE_PDATA_VALUE("%hh", "%hhu", "%08hhx", "0x%hhx", unsigned char);
+            }
         }
         
         if (param->flags & TRACE_PARAM_FLAG_NUM_16) {
-            const char *fmt_str = "%h";
-            unsigned short v;
-
-            v = (*(unsigned short *)pdata);
-            pdata += sizeof(v);
-
-            if (param->flags & TRACE_PARAM_FLAG_UNSIGNED)
-                fmt_str = "%hu";
-            else if (param->flags & TRACE_PARAM_FLAG_ZERO)
-                fmt_str = "%08hx";
-            else if (param->flags & TRACE_PARAM_FLAG_HEX)
-                fmt_str = "0x%hx";
-
-            SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD(""));
-            APPEND_FORMATTED_TEXT(fmt_str, v);
-            if ((param + 1)->flags != 0)
-                SIMPLE_APPEND_FORMATTED_TEXT(delimiter);
-            
-            SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
+            if (describe_params) {
+                SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD("<short>"));
+                SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
+            } else {
+                WRITE_SIMPLE_PDATA_VALUE("%h", "%hu", "%08hx", "0x%hx", unsigned short);
+            }
         }
 
         if (param->flags & TRACE_PARAM_FLAG_NUM_32) {
-            const char *fmt_str = "%d";
-            unsigned int v;
-
-            v = (*(unsigned int *)pdata);
-            pdata += sizeof(v);
-
-            if (param->flags & TRACE_PARAM_FLAG_UNSIGNED)
-                fmt_str = "%u";
-            else if (param->flags & TRACE_PARAM_FLAG_ZERO)
-                fmt_str = "%08x";
-            else if (param->flags & TRACE_PARAM_FLAG_HEX)
-                fmt_str = "0x%x";
-
-            SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD(""));
-            APPEND_FORMATTED_TEXT(fmt_str, v);
-            if ((param + 1)->flags != 0)
-                SIMPLE_APPEND_FORMATTED_TEXT(delimiter);
-            
-            SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
+            if (describe_params) {
+                SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD("<int>"));
+                SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
+            } else {
+                WRITE_SIMPLE_PDATA_VALUE("%d", "%u", "%08x", "0x%x", unsigned int);
+            }
         }
 
         if (param->flags & TRACE_PARAM_FLAG_NUM_64) {
-            const char *fmt_str = "%lld";
-            unsigned long long v;
-
-            v = (*(unsigned long long *)pdata);
-            pdata += sizeof(v);
-
-            if (param->flags & TRACE_PARAM_FLAG_UNSIGNED)
-                fmt_str = "%llu";
-            else if (param->flags & TRACE_PARAM_FLAG_ZERO)
-                fmt_str = "%016llx";
-            else if (param->flags & TRACE_PARAM_FLAG_HEX)
-                fmt_str = "0x%llx";
-
-            SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD(""));
-            APPEND_FORMATTED_TEXT(fmt_str, v);
-            if ((param + 1)->flags != 0)
-                SIMPLE_APPEND_FORMATTED_TEXT(delimiter);
-            
-            SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
+            if (describe_params) {
+                SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD("<long long>"));
+                SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
+            } else {
+                WRITE_SIMPLE_PDATA_VALUE("%lld", "%llu", "%016llx", "0x%llx", unsigned long long);
+            }
         }
         
         if ((param + 1)->flags == 0 && (trace_kind == TRACE_LOG_DESCRIPTOR_KIND_FUNC_ENTRY || trace_kind == TRACE_LOG_DESCRIPTOR_KIND_FUNC_LEAVE)) {
-            SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(")"));
+            SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
+            SIMPLE_APPEND_FORMATTED_TEXT((")"));
+        }
+
+        if ((param + 1)->flags != 0)
+            SIMPLE_APPEND_FORMATTED_TEXT(delimiter);
+    }
+
+    (*bytes_processed) = (char *) pdata - (char *) typed_record;
+    return total_length;
+}
+
+#define FORMAT_SEVERITY(str, __severity)                                        \
+    if (TRACE_SEV__MIN <= __severity &&  TRACE_SEV__MAX >= __severity)          \
+		str = sev_to_str[__severity];                                           \
+	else                                                                        \
+		str = "???";                                                            \
+                                                                                \
+                                                                                \
+    switch (__severity) {                                                        \
+    case TRACE_SEV_FUNC_TRACE: severity_str = F_GREY("-----"); break;           \
+    case TRACE_SEV_DEBUG: severity_str = F_WHITE("DEBUG"); break;               \
+    case TRACE_SEV_INFO: severity_str = F_GREEN_BOLD("INFO "); break;           \
+    case TRACE_SEV_WARN: severity_str = F_YELLOW_BOLD("WARN "); break;          \
+    case TRACE_SEV_ERROR: severity_str = F_RED_BOLD("ERROR"); break;            \
+    case TRACE_SEV_FATAL: severity_str = F_RED_BOLD("FATAL"); break;            \
+    default: break;                                                             \
+    }
+
+int TRACE_PARSER__format_typed_record(trace_parser_t *parser, struct trace_parser_buffer_context *context, struct trace_record *record, char *formatted_record, unsigned int formatted_record_size)
+{
+    const char *buffer_name = "<? unknown ?>";
+    if (context) {
+        buffer_name = context->name;
+    }
+    
+    char timestamp[0x100];
+    int total_length = 0;
+
+    format_timestamp(parser, record->ts, timestamp, sizeof(timestamp));
+
+    const char *severity_str;
+    FORMAT_SEVERITY(severity_str, record->severity);
+
+
+    if (parser->color) {
+        APPEND_FORMATTED_TEXT("%s " _F_MAGENTA("%-20s ") _ANSI_DEFAULTS("%s [") _F_BLUE_BOLD("%5d") _ANSI_DEFAULTS("]") _F_GREY(" : ") _ANSI_DEFAULTS(""),
+                              severity_str, buffer_name, timestamp, record->tid);
+    } else {
+        APPEND_FORMATTED_TEXT("%s %-20s %s [%5d] : ",
+                              severity_str, buffer_name, timestamp, record->tid);
+    }
+    
+    if (parser->indent) {
+        int i;
+        if (record->nesting < 0) {
+            record->nesting = 0;
+        }
+
+        for (i = 0; i < record->nesting; i++) {
+            SIMPLE_APPEND_FORMATTED_TEXT("    ");
         }
     }
 
+
+
+    int bytes_processed;
+    if (!context) {
+        SIMPLE_APPEND_FORMATTED_TEXT(_F_RED_BOLD("<?>"));
+        goto exit;
+     }
+    
+    total_length = format_typed_params(parser, context, (struct trace_record_typed *) record->u.payload, formatted_record, formatted_record_size, total_length, &bytes_processed, FALSE);
+    
 exit:
     SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
-    *formatted_record_length = strlen(formatted_record);
+    formatted_record[total_length] = '\0';
     return 0;
 }
 
@@ -769,7 +816,7 @@ static int process_metadata(trace_parser_t *parser, struct trace_record *record)
             goto Exit;
         }
 
-        rc = accumulate_metadata(parser, &tmp_record);
+        rc = accumulate_metadata(parser, &tmp_record, parser->event_handler, parser->arg);
         if (0 != rc) {
             goto Exit;
         }
@@ -819,39 +866,10 @@ static bool_t match_record_dump_with_match_expression(struct trace_record_matche
     if (matcher->type == TRACE_MATCHER_PID) {
         return record->pid == matcher->u.pid;
     }
-
-    if (matcher->type == TRACE_MATCHER_TID) {
-        return TRUE;
-    }
-
-    if (matcher->type == TRACE_MATCHER_LOGID) {
-        return TRUE;
-    }
-
+    
     if (matcher->type == TRACE_MATCHER_SEVERITY) {
         return (buffer_dump->severity_type) & (1 << matcher->u.severity);
     }
-
-    if (matcher->type == TRACE_MATCHER_TYPE) {
-        return TRUE;
-    }
-
-    if (matcher->type == TRACE_MATCHER_FUNCTION) {
-        return TRUE;
-    }
-
-    if (matcher->type == TRACE_MATCHER_LOG_PARAM_VALUE) {
-        return TRUE;
-    }
-
-    if (matcher->type == TRACE_MATCHER_LOG_NAMED_PARAM_VALUE) {
-        return TRUE;
-    }
-
-    if (matcher->type == TRACE_MATCHER_TIMERANGE) {
-        return TRUE;
-    }
-
     if (matcher->type == TRACE_MATCHER_PROCESS_NAME && buffer_context) {
         if (strcmp(matcher->u.process_name, buffer_context->name) == 0) {
             return TRUE;
@@ -996,12 +1014,6 @@ static bool_t record_params_contain_value(struct trace_record *record, const cha
     unsigned char *pdata = record->u.typed.payload;
     unsigned long long param_value;
     for (; param->flags != 0; param++) {
-        if (param_name) {
-            if (!(param->param_name)) {
-                continue;
-            }
-        }
-        
         bool_t valid_value = FALSE;
 
         if (param->flags & TRACE_PARAM_FLAG_ENUM) {
@@ -1047,14 +1059,14 @@ static bool_t record_params_contain_value(struct trace_record *record, const cha
         }
         
 
-        if (valid_value && value == param_value) {
-            if (!param_name) {
-                return TRUE;
+        if (param_name) {
+            if (!(param->param_name)) {
+                continue;
             }
+        }
 
-            if (strcmp(param_name, param->param_name) == 0) {
-                return TRUE;
-            }
+        if (valid_value && value == param_value) {
+            return TRUE;
         }        
     }
 
@@ -1091,6 +1103,9 @@ static bool_t match_record_with_match_expression(struct trace_record_matcher_spe
         break;
     case TRACE_MATCHER_PID:
         return record->pid == matcher->u.pid;
+        break;
+    case TRACE_MATCHER_NESTING:
+        return record->nesting == matcher->u.nesting;
         break;
     case TRACE_MATCHER_TID:
         return record->tid == matcher->u.tid;
@@ -1185,7 +1200,7 @@ static int process_single_record(trace_parser_t *parser, struct trace_record_mat
         rc = metadata_info_started(parser, record);
         break;
     case TRACE_REC_TYPE_METADATA_PAYLOAD:
-        rc = accumulate_metadata(parser, record);
+        rc = accumulate_metadata(parser, record, handler, arg);
         break;
     case TRACE_REC_TYPE_DUMP_HEADER:
         process_dump_header_record(parser, filter, record);
@@ -1234,20 +1249,23 @@ static int read_smallest_ts_record(trace_parser_t *parser, struct trace_record *
         if (0 != rc) {
             return -1;
         }
-        
+
         if (tmp_record.ts < min_ts) {
             min_ts = tmp_record.ts;
             index_of_minimal_chunk = i;
             memcpy(record, &tmp_record, sizeof(*record));
         }
     }
-
+    
     if (min_ts == MAX_ULLONG) {
         memset(record, 0, sizeof(*record));
     } else {
         parser->buffer_dump_context.record_dump_contexts[index_of_minimal_chunk].current_offset++;
     }
 
+    if (!inside_record_dump(parser)) {
+        TRACE_PARSER__seek(parser, parser->buffer_dump_context.end_offset, SEEK_SET);
+    }
     return 0;
 }
 
@@ -1301,7 +1319,6 @@ static int process_next_record_from_file(trace_parser_t *parser, struct trace_re
         } else {
             rc = read_next_record(parser, &record);
         }
-
         
         if (0 != rc) {
             return -1;
@@ -1326,8 +1343,7 @@ static void dumper_event_handler(trace_parser_t *parser, enum trace_parser_event
 
     char formatted_record[2048];
     struct parser_complete_typed_record *complete_typed_record = (struct parser_complete_typed_record *) event_data;
-    unsigned int formatted_record_length;
-    TRACE_PARSER__format_typed_record(parser, complete_typed_record->buffer, complete_typed_record->record, formatted_record, sizeof(formatted_record), &formatted_record_length);
+    TRACE_PARSER__format_typed_record(parser, complete_typed_record->buffer, complete_typed_record->record, formatted_record, sizeof(formatted_record));
     printf("%s\n", formatted_record);
 }
 
@@ -1354,7 +1370,7 @@ static int restore_parsing_buffer_dump_context(trace_parser_t *parser, struct bu
     return TRACE_PARSER__seek(parser, parser->buffer_dump_context.file_offset, SEEK_SET);
 }
 
-int TRACE_PARSER__process_all_metadata(trace_parser_t *parser)
+int process_all_metadata(trace_parser_t *parser, trace_parser_event_handler_t handler)
 {
     struct dump_context_s dump_context;
     struct buffer_dump_context_s orig_dump_context;
@@ -1367,13 +1383,55 @@ int TRACE_PARSER__process_all_metadata(trace_parser_t *parser)
     matcher.type = TRACE_MATCHER_FALSE;
     
     while (1) {
-        int rc = process_next_record_from_file(parser, &matcher, dumper_event_handler, &dump_context);
+        int rc = process_next_record_from_file(parser, &matcher, handler, &dump_context);
         if (0 != rc) {
             break;
         }
     }
 
     restore_parsing_buffer_dump_context(parser, &orig_dump_context);
+    return 0;
+}
+
+static int log_id_to_log_template(trace_parser_t *parser, struct trace_parser_buffer_context *context, int log_id, char *formatted_record, unsigned int formatted_record_size)
+{
+    int total_length = 0;
+
+    if (parser->color) {
+        APPEND_FORMATTED_TEXT(_F_MAGENTA("%-20s") _ANSI_DEFAULTS(" "), context->name);
+    } else {
+        APPEND_FORMATTED_TEXT("%-20s", context->name);
+    }
+    
+
+    struct trace_record_typed record;
+    record.log_id = log_id;
+    int bytes_processed;
+    total_length = format_typed_params(parser, context, &record, formatted_record, formatted_record_size, total_length - 1, &bytes_processed, TRUE);
+    formatted_record[total_length] = '\0';
+
+    return 0;
+}
+
+
+static void dump_metadata(trace_parser_t *parser, enum trace_parser_event_e event, void *event_data, void __attribute__((unused)) *arg)
+{
+    if (event != TRACE_PARSER_FOUND_METADATA) {
+        return;
+    }
+
+    struct trace_parser_buffer_context *context = (struct trace_parser_buffer_context *) event_data;
+    unsigned int i;
+    char formatted_template[512];
+    for (i = 0; i < context->metadata->log_descriptor_count; i++) {
+        log_id_to_log_template(parser, context, i, formatted_template, sizeof(formatted_template));
+        printf("%s\n", formatted_template);
+    }
+}
+
+int TRACE_PARSER__dump_all_metadata(trace_parser_t *parser)
+{
+    process_all_metadata(parser, dump_metadata);
     return 0;
 }
 
@@ -1385,12 +1443,12 @@ static void format_record_event_handler(trace_parser_t *parser, enum trace_parse
 
     struct parser_complete_typed_record *complete_typed_record = (struct parser_complete_typed_record *) event_data;
     struct dump_context_s *dump_context = (struct dump_context_s *) arg;
-    TRACE_PARSER__format_typed_record(parser, complete_typed_record->buffer, complete_typed_record->record, dump_context->formatted_record, sizeof(dump_context->formatted_record), &dump_context->formatted_record_length);
+    TRACE_PARSER__format_typed_record(parser, complete_typed_record->buffer, complete_typed_record->record, dump_context->formatted_record, sizeof(dump_context->formatted_record));
 
     return;
 }
 
-int TRACE_PARSER__process_next_from_memory(trace_parser_t *parser, struct trace_record *rec, char *formatted_record, unsigned int formatted_record_size, unsigned int *formatted_record_length)
+int TRACE_PARSER__process_next_from_memory(trace_parser_t *parser, struct trace_record *rec, char *formatted_record, unsigned int formatted_record_size, unsigned int *record_formatted)
 {
     if (parser->stream_type != TRACE_INPUT_STREAM_TYPE_NONSEEKABLE) {
         return -1;
@@ -1399,9 +1457,11 @@ int TRACE_PARSER__process_next_from_memory(trace_parser_t *parser, struct trace_
     memset(&dump_context, 0, sizeof(dump_context));
     int complete_record_processed;
     int rc = process_single_record(parser, &parser->record_filter, rec, &complete_record_processed, TRUE, format_record_event_handler, &dump_context);
-    if (dump_context.formatted_record_length) {
+    if (strlen(dump_context.formatted_record)) {
         strncpy(formatted_record, dump_context.formatted_record, formatted_record_size);
-        *formatted_record_length = dump_context.formatted_record_length;
+        *record_formatted = 1;
+    } else {
+        *record_formatted = 0;
     }
     
     return rc;
@@ -1499,62 +1559,33 @@ int TRACE_PARSER__process_previous_record_from_file(trace_parser_t *parser)
 }
 
 
-static void count_function_entries(trace_parser_t __attribute__((unused)) *parser, enum trace_parser_event_e event, void __attribute__((unused)) *event_data, void __attribute__((unused)) *arg)
+static void count_entries(trace_parser_t *parser, enum trace_parser_event_e event, void __attribute__((unused)) *event_data, void __attribute__((unused)) *arg)
 {
     if (event != TRACE_PARSER_COMPLETE_TYPED_RECORD_PROCESSED) {
         return;
     }
-    
+
     struct parser_complete_typed_record *complete_typed_record = (struct parser_complete_typed_record *) event_data;
-    struct trace_log_descriptor *log_desc;
-    struct function_stats *stats = (struct function_stats *) arg;
-    struct function_entry_count *s = NULL;
+    struct log_stats *stats = (struct log_stats *) arg;
+    struct log_occurrences *s = NULL;
+    char template[512];
 
-    if (!(complete_typed_record->record->termination & TRACE_TERMINATION_FIRST)) {
-        if (stats->inside_record_entry) {
-            stats->function_byte_count += sizeof(*complete_typed_record->record);
-            if (complete_typed_record->record->termination & TRACE_TERMINATION_LAST) {
-                stats->inside_record_entry = 0;
-            }
-        } else {
-            stats->debug_byte_count += sizeof(*complete_typed_record->record);
-        }
+    if (!(complete_typed_record->record->termination & TRACE_TERMINATION_LAST)) {
         return;
     }
-    
+
     unsigned int metadata_index = complete_typed_record->record->u.typed.log_id;
-    if (metadata_index >= complete_typed_record->buffer->metadata->log_descriptor_count) {
-        return;
-    }
-
-    log_desc = &complete_typed_record->buffer->descriptors[metadata_index];
-    if (log_desc->params->flags & TRACE_PARAM_FLAG_ENTER) {
-        stats->function_byte_count += sizeof(*complete_typed_record->record);
-        stats->inside_record_entry = 1;
-        int rc = find_function_stats(stats, log_desc->params->const_str, &s);
-        if (rc < 0) {
-            strncpy(stats->functions[stats->count].name, log_desc->params->const_str, sizeof(stats->functions[stats->count]));
-            stats->functions[stats->count].entry_count = 1;
-            stats->functions[stats->count].leave_count = 0;
-            stats->count++;
-        } else {
-            s->entry_count++;
-        }
-    } else if (log_desc->params->flags & TRACE_PARAM_FLAG_LEAVE) {
-        stats->function_byte_count += sizeof(*complete_typed_record->record);
-        stats->inside_record_entry = 1;
-        int rc = find_function_stats(stats, log_desc->params->const_str, &s);
-        if (rc < 0) {
-            strncpy(stats->functions[stats->count].name, log_desc->params->const_str, sizeof(stats->functions[stats->count]));
-            stats->functions[stats->count].leave_count = 1;
-            stats->functions[stats->count].entry_count = 0;
-            stats->count++;
-        } else {
-            s->leave_count++;
-        }
-    }
-    else {
-        stats->debug_byte_count += sizeof(*complete_typed_record->record);
+    
+    log_id_to_log_template(parser, complete_typed_record->buffer, metadata_index, template, sizeof(template));
+    
+    int rc = find_log_stats(stats, template, &s);
+    stats->record_count++;
+    if (rc < 0) {
+            strncpy(stats->logs[stats->unique_count].template, template, sizeof(stats->logs[stats->unique_count]));
+            stats->logs[stats->unique_count].occurrences = 1;
+            stats->unique_count++;
+    } else {
+        s->occurrences++;
     }
     
     return;
@@ -1566,10 +1597,10 @@ int TRACE_PARSER__dump_statistics(trace_parser_t *parser)
         return -1;
     }
     
-    struct function_stats *stats = malloc(sizeof(struct function_stats));
+    struct log_stats *stats = malloc(sizeof(struct log_stats));
     unsigned int count = 0;
     while (1) {
-        int rc = process_next_record_from_file(parser, &parser->record_filter, count_function_entries, (void *) stats);
+        int rc = process_next_record_from_file(parser, &parser->record_filter, count_entries, (void *) stats);
         count++;
         if (0 != rc) {
             dump_stats(stats);
@@ -1600,6 +1631,7 @@ int TRACE_PARSER__from_file(trace_parser_t *parser, const char *filename, trace_
         parser->file_info.fd = -1;
         return -1;
     }
+    
 
     strncpy(parser->file_info.filename, filename, sizeof(parser->file_info.filename));    
     strncpy(parser->file_info.machine_id, (char * ) file_header.u.file_header.machine_id, sizeof(parser->file_info.machine_id));
@@ -1802,7 +1834,6 @@ unsigned long long TRACE_PARSER__seek_to_time(trace_parser_t *parser, unsigned l
         *error_occurred = 1;
         return -1;
     }
-
     int rc = set_buffer_dump_context_from_ts(parser, &parser->record_filter, ts, new_offset);
     if (0 != rc) {
         *error_occurred = 1;
