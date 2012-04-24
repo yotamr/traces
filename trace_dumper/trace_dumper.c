@@ -14,21 +14,25 @@
 #include <sys/uio.h>
 #include <sys/time.h>
 #include <sys/utsname.h>
-#include "../list_template.h"
-#include "filesystem.h"
-#include "../bool.h"
-#include "../trace_metadata_util.h"
-#include "../trace_parser.h"
-#include "../min_max.h"
-#include "../array_length.h"
 #include <syslog.h>
 #include <time.h>
 #include <sys/sysinfo.h>
-#include "../trace_lib.h"
-#include "../trace_user.h"
+
+#include "config.h"
+#include "list_template.h"
+#include "filesystem.h"
+#include "bool.h"
+#include "trace_metadata_util.h"
+#include "trace_parser.h"
+#include "min_max.h"
+#include "array_length.h"
+#include "trace_lib.h"
+#include "trace_user.h"
 
 #define MAX_FILTER_SIZE (10)
 #define METADATA_IOVEC_SIZE 2*(MAX_METADATA_SIZE/TRACE_RECORD_PAYLOAD_SIZE+1)
+
+#define TRACE_FILE_MAX_RECORDS_PER_FILE        0x1000000
 
 struct trace_mapped_metadata {
     struct iovec metadata_iovec[METADATA_IOVEC_SIZE];
@@ -83,7 +87,6 @@ CREATE_LIST_IMPLEMENTATION(BufferFilter, buffer_name_t);
 
 #define TRACE_METADATA_IOVEC_SIZE  (2*(MAX_METADATA_SIZE/TRACE_RECORD_PAYLOAD_SIZE+1))
 
-#define TRACE_FILE_MAX_RECORDS_PER_FILE        0x1000000
 #define TRACE_FILE_MAX_RECORDS_PER_LOGDIR        (TRACE_FILE_MAX_RECORDS_PER_FILE) * 10
 #define TRACE_FILE_MAX_RECORDS_PER_CHUNK       0x10000
 
@@ -122,8 +125,6 @@ struct trace_dumper_configuration_s {
 };
 
 static struct trace_dumper_configuration_s trace_dumper_configuration;
-
-#define SHM_DIR "/dev/shm"
 
 bool_t is_trace_shm_region(const char *shm_name)
 {
@@ -360,8 +361,8 @@ static int delete_shm_files(unsigned short pid)
     int rc;
     snprintf(dynamic_trace_filename, sizeof(dynamic_trace_filename), "_trace_shm_%d_dynamic_trace_data", pid);
     snprintf(static_log_data_filename, sizeof(static_log_data_filename), "_trace_shm_%d_static_trace_metadata", pid);
-    snprintf(full_dynamic_trace_filename, sizeof(full_dynamic_trace_filename), "%s/%s", SHM_DIR, dynamic_trace_filename);
-    snprintf(full_static_log_data_filename, sizeof(full_static_log_data_filename), "%s/%s", SHM_DIR, static_log_data_filename);
+    snprintf(full_dynamic_trace_filename, sizeof(full_dynamic_trace_filename), "%s/%s", SHM_PATH, dynamic_trace_filename);
+    snprintf(full_static_log_data_filename, sizeof(full_static_log_data_filename), "%s/%s", SHM_PATH, static_log_data_filename);
 
     rc = unlink(full_dynamic_trace_filename);
     rc |= unlink(full_static_log_data_filename);
@@ -393,8 +394,8 @@ static int map_buffer(struct trace_dumper_configuration_s *conf, pid_t pid)
     unsigned int dead = 0;
     snprintf(dynamic_trace_filename, sizeof(dynamic_trace_filename), "_trace_shm_%d_dynamic_trace_data", pid);
     snprintf(static_log_data_filename, sizeof(static_log_data_filename), "_trace_shm_%d_static_trace_metadata", pid);
-    snprintf(full_dynamic_trace_filename, sizeof(full_dynamic_trace_filename), "%s/%s", SHM_DIR, dynamic_trace_filename);
-    snprintf(full_static_log_data_filename, sizeof(full_static_log_data_filename), "%s/%s", SHM_DIR, static_log_data_filename);
+    snprintf(full_dynamic_trace_filename, sizeof(full_dynamic_trace_filename), "%s/%s", SHM_PATH, dynamic_trace_filename);
+    snprintf(full_static_log_data_filename, sizeof(full_static_log_data_filename), "%s/%s", SHM_PATH, static_log_data_filename);
 
     int trace_region_size = get_file_size(full_dynamic_trace_filename);
     if (trace_region_size <= 0) {
@@ -410,15 +411,17 @@ static int map_buffer(struct trace_dumper_configuration_s *conf, pid_t pid)
         goto delete_shm_files;
     }
 
-    dynamic_fd = shm_open(dynamic_trace_filename, O_RDWR, 0);
+    dynamic_fd = open(full_dynamic_trace_filename, O_RDWR, 0);
+    printf("opened (1) %s\n", full_dynamic_trace_filename);
     if (dynamic_fd < 0) {
         ERROR("Unable to open dynamic buffer %s: %s", dynamic_trace_filename, strerror(errno));
         rc = -1;
         goto delete_shm_files;
     }
     
-    static_fd = shm_open(static_log_data_filename, O_RDWR, 0);
-    if (dynamic_fd < 0) {
+    static_fd = open(full_static_log_data_filename, O_RDWR, 0);
+    printf("opened (2) %s\n", full_static_log_data_filename);
+    if (static_fd < 0) {
         ERROR("Unable to open static buffer: %s", strerror(errno));
         rc = -1;
         goto close_static;
@@ -563,7 +566,7 @@ static int map_new_buffers(struct trace_dumper_configuration_s *conf)
     DIR *dir;
     struct dirent *ent;
     int rc = 0;
-    dir = opendir(SHM_DIR);
+    dir = opendir(SHM_PATH);
 
     if (dir == NULL) {
         return -1;

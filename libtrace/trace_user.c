@@ -26,12 +26,12 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 #include <string.h>
 #include <libgen.h>
 
+#include "config.h"
 #include "macros.h"
 #include "trace_lib.h"
 #include "trace_user.h"
 
 #include "halt.h"
-
 
 struct trace_buffer *current_trace_buffer = NULL;
 __thread unsigned short trace_current_nesting;
@@ -252,8 +252,9 @@ static void map_static_log_data(const char *buffer_name)
     unsigned int type_definition_count;
     unsigned int enum_value_count;
     static_log_alloc_size(log_descriptor_count, &total_log_descriptor_params, &type_definition_count, &enum_value_count, &alloc_size);
-    snprintf(shm_name, sizeof(shm_name), "%s%d_static_trace_metadata", TRACE_SHM_ID, getpid());
-    int shm_fd = shm_open(shm_name, O_CREAT | O_RDWR, 0660);
+    snprintf(shm_name, sizeof(shm_name), "%s%s%d_static_trace_metadata", SHM_PATH, TRACE_SHM_ID, getpid());
+    int shm_fd = open(shm_name, O_CREAT | O_RDWR, 0660);
+    printf("map_static_log_data %s\n",shm_name);
     if (shm_fd < 0) {
         return;
     }
@@ -291,8 +292,9 @@ static void init_records_metadata(void)
 static void map_dynamic_log_buffers()
 {
     char shm_name[0x100];
-    snprintf(shm_name, sizeof(shm_name), "%s%d_dynamic_trace_data", TRACE_SHM_ID, getpid());
-    int shm_fd = shm_open(shm_name, O_CREAT | O_RDWR, 0660);
+    snprintf(shm_name, sizeof(shm_name), "%s%s%d_dynamic_trace_data", SHM_PATH, TRACE_SHM_ID, getpid());
+    int shm_fd = open(shm_name, O_CREAT | O_RDWR, 0660);
+    printf("map_dynamic_log_buffers %s\n",shm_name);
     if (shm_fd < 0) {
         return;
     }

@@ -27,7 +27,7 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 #include "clang/AST/AST.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "llvm/Support/raw_ostream.h"
-#include "../trace_defs.h"
+#include "trace_defs.h"
 
 #include <stdio.h>
 #include <stdlib.h>

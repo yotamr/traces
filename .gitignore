@@ -1,8 +1,11 @@
 trace_dumper/trace_dumper
 trace_reader/simple_trace_reader
 trace_instrumentor/trace_instrumentor.so
+interactive_reader/_trace_parser_ctypes.py
 traces.so
 demo/demo
 lib*.a
 *.o
 *.pyc
+*\#
+*~

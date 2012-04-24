@@ -22,7 +22,7 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 extern "C" {
 #endif
 
-#define TRACE_SHM_ID "_trace_shm_"    
+#include "config.h"
 #include "trace_defs.h"
 #include <sys/syscall.h>
 #include <time.h>    
@@ -32,13 +32,23 @@ extern "C" {
 #endif
     
 #define __repr__ _trace_represent(unsigned int *buf_left, struct trace_record *_record, struct trace_record **__record_ptr, unsigned char **typed_buf)
-#ifndef	_UNISTD_H    
+#ifdef ANDROID
+#ifndef	_UNISTD_H
+#ifdef __cplusplus     
+    extern int syscall (int __sysno, ...) throw ();
+#else
+    extern int syscall(int __sysno, ...);
+#endif //__clusplus
+#endif //_UNISTD
+#else //ANDROID
+#ifndef _SYS_SYSCALL_H_
 #ifdef __cplusplus     
     extern long int syscall (long int __sysno, ...) throw ();
-#else
+#else 
     extern long int syscall(long int __sysno, ...);
-#endif
-#endif    
+#endif //__cplusplus
+#endif //_SYS_SYSCALL_H_
+#endif //ANDROID
 
 #define _O_RDONLY	00000000   
 extern struct trace_buffer *current_trace_buffer;
@@ -46,7 +56,7 @@ extern struct trace_log_descriptor __static_log_information_start;
 extern struct trace_log_descriptor __static_log_information_end;
 extern struct trace_type_definition *__type_information_start;
 extern __thread unsigned short trace_current_nesting; 
-    
+
 static inline unsigned short int trace_get_pid(void)
 {
     static __thread int pid_cache = 0;
