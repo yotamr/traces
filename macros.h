@@ -20,8 +20,6 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 
 #include "halt.h"
 
-#define PS(x) x, sizeof(x)
-
 #define ASSERT(x) {if (!(x)) { HALT();}}
 
 #endif
