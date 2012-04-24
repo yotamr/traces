@@ -1,6 +1,6 @@
 #include <unistd.h>
 #include <stdio.h>
-#include "../trace_user.h"
+#include "trace_user.h"
 enum calculation_type {
     CALCULATION_TYPE_DECREMENT,
     CALCULATION_TYPE_INCREMENT,
