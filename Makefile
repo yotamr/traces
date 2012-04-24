@@ -1,5 +1,9 @@
-CFLAGS=-Iinclude/ -c -Wall -g -fPIC 
+CFLAGS=-Iinclude/ -c -Wall -g -fPIC
+
+TRACE_LLVM_CONFIG_PATH?=llvm-config
 LLVM_CONFIG=$(TRACE_LLVM_CONFIG_PATH)
+H2XML = $(shell which h2xml h2xml.py | head -1)
+XML2PY = $(shell which xml2py xml2py.py | head -1)
 
 all: libtrace libtraceuser simple_trace_reader trace_dumper interactive_reader trace_instrumentor
 
@@ -28,8 +32,8 @@ trace_reader/simple_trace_reader: $(LIBTRACE_OBJS) trace_reader/simple_trace_rea
 	gcc -L. trace_reader/simple_trace_reader.o -ltrace -o trace_reader/simple_trace_reader
 
 interactive_reader/_trace_parser_ctypes.py: include/trace_parser.h
-	h2xml.py  -c -I. include/trace_parser.h -o _trace_parser_ctypes.xml
-	xml2py.py -k f -k e -k s _trace_parser_ctypes.xml > interactive_reader/_trace_parser_ctypes.py
+	$(H2XML)  -c -I. include/trace_parser.h -o _trace_parser_ctypes.xml
+	$(XML2PY) -k f -k e -k s _trace_parser_ctypes.xml > interactive_reader/_trace_parser_ctypes.py
 	rm _trace_parser_ctypes.xml
 
 trace_instrumentor/trace_instrumentor.o: CXXFLAGS := $(shell $(LLVM_CONFIG) --cxxflags) -Iinclude/ $(TRACE_CLANG_INCLUDE_PATH:%=-I%)
