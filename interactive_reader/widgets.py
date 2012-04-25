@@ -129,4 +129,16 @@ class AdvancedEdit(urwid.Edit):
             result = urwid.Edit.keypress(self, size, key)
             self.completions = None
             return result
-                
+
+class AlwaysOnTopListBox(urwid.ListBox):
+    def keypress(self, size, key):
+        ret = super(AlwaysOnTopListBox, self).keypress(size, key)
+        self.set_focus_to_top_widget()
+        return ret
+
+    def set_focus_to_top_widget(self):
+        middle, top, bottom = self.calculate_visible((0, 100), 100)
+        if not top[1]:
+            return
+
+        self.set_focus(top[1][-1][1])

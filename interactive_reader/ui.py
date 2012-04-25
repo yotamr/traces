@@ -3,7 +3,7 @@ import signal
 import operator
 import time
 import urwid
-from widgets import AnsiText, AdvancedEdit
+from widgets import AnsiText, AdvancedEdit, AlwaysOnTopListBox
 from completers import StringlistCompleter, MultipleSelectionCompleter
 from _CTraceParser import TraceParser, TraceFilter, FilterParseError
 from datetime import datetime
@@ -185,7 +185,7 @@ class TraceReaderUI(object):
 
     def __init__(self):
         self._trace_walker = TraceWalker()
-        self._trace_view = urwid.ListBox(self._trace_walker)
+        self._trace_view = AlwaysOnTopListBox(self._trace_walker)
         self._edit_line = AdvancedEdit()
         self._info_line = urwid.Text('')
         self._footer = AnsiText(self._footer_text)
@@ -487,16 +487,18 @@ class TraceReaderUI(object):
         if input == 'end':
             self._trace_walker.seek_to_end()
             self._trace_view.set_focus(0, 'above')
-            self._trace_view.set_focus_valign('top')
 
         if input == 'home':
             self._trace_walker.seek_to_start()
             self._trace_view.set_focus(0, 'below')
-            self._trace_view.set_focus_valign('top')
             
         if input == 'enter' and self._main_frame.get_focus() == 'footer':
             self._handle_command()
             self._main_frame.set_focus('body')
+
+        self._trace_view.set_focus_to_top_widget()
+        self._trace_view.set_focus_valign('top')
+
 
     def _cancel_pending_commands(self):
         if self._command_mode:
