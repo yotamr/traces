@@ -14,7 +14,7 @@ simple_trace_reader: trace_reader/simple_trace_reader
 interactive_reader: interactive_reader/_trace_parser_ctypes.py
 
 LIBTRACEUSER_FILES:=trace_metadata_util halt trace_user
-LIBTRACE_FILES:=$(LIBTRACEUSER_FILES) trace_parser
+LIBTRACE_FILES:=trace_metadata_util halt trace_parser
 LIBTRACE_OBJS=$(LIBTRACE_FILES:%=libtrace/%.o)
 LIBTRACEUSER_OBJS=$(LIBTRACEUSER_FILES:%=libtrace/%.o)
 
