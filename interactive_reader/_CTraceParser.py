@@ -44,11 +44,24 @@ def make_bound_handler(parser_obj):
     def event_handler(parser, event_type, event_data, arg):
         parser_obj.record_ready = False
 
-
         if event_type == _cparser_defs.TRACE_PARSER_FOUND_METADATA:
             if parser_obj._event_handler:
                 parser_obj._event_handler('metadata_updated')
             return
+
+        if event_type == _cparser_defs.TRACE_PARSER_OPERATION_IN_PROGRESS:
+            if parser_obj._event_handler:
+                progress_status = cast(c_void_p(event_data), POINTER(_cparser_defs.operation_progress_status_s))
+                parser_obj._event_handler('operation_in_progress',
+                                          records_processed = progress_status.contents.records_processed,
+                                          current_offset = progress_status.contents.current_offset)
+                return
+
+        if event_type == _cparser_defs.TRACE_PARSER_UNKNOWN_RECORD_ENCOUNTERED:
+            if parser_obj._event_handler:
+                parser_obj._event_handler('unknown_record')
+                return
+            
 
         if event_type not in (_cparser_defs.TRACE_PARSER_COMPLETE_TYPED_RECORD_PROCESSED, _cparser_defs.TRACE_PARSER_MATCHED_RECORD):
             return
@@ -65,7 +78,15 @@ def make_bound_handler(parser_obj):
         pointer(record_copy)[0] = complete_record_ptr.contents.record[0]
         parser_obj.raw_record = record_copy
 
-    return event_handler
+    def safe_event_handler(parser, event_type, event_data, arg):
+        try:
+            event_handler(parser, event_type, event_data, arg)
+        except KeyboardInterrupt:
+            parser_obj._event_handler('interrupted')
+            if parser_obj._event_handler:
+                parser_obj._event_handler('interrupted')
+
+    return safe_event_handler
 
 class FilterParseError(Exception):
     pass
@@ -133,6 +154,7 @@ class TraceFilter(object):
         if not end_time:
             return None
 
+        print start_time, end_time
         new_filter = _cparser_defs.trace_record_matcher_spec_s()
         new_filter.type = TRACE_MATCHER_TIMERANGE
         new_filter.u.time_range.start = start_time
@@ -170,7 +192,7 @@ class TraceFilter(object):
         new_filter.type = filter_type
         if filter_type == TRACE_MATCHER_PID:
             new_filter.u.pid = value
-        if filter_type == TRACE_MATCHER_NESTING:
+        elif filter_type == TRACE_MATCHER_NESTING:
             new_filter.u.nesting = value
         elif filter_type == TRACE_MATCHER_TID:
             new_filter.u.tid = value
@@ -356,6 +378,7 @@ class TraceParser(object):
 
         if filename:
             _traces_so.TRACE_PARSER__from_file(byref(self._parser_handle), filename, self._handler, byref(c_int()))
+            self.end_offset = self._parser_handle.file_info.end_offset
         else:
             _traces_so.TRACE_PARSER__from_external_stream(byref(self._parser_handle), self._handler, byref(c_int()))
 
@@ -561,6 +584,9 @@ class TraceParser(object):
 
     def seek_to_end(self):
         return self.seek_to_time(2**63)
+
+    def cancel_ongoing_operation(self):
+        _traces_so.TRACE_PARSER__cancel_ongoing_operation(byref(self._parser_handle))
 
     def __del__(self):
         _traces_so.TRACE_PARSER__fini(byref(self._parser_handle))

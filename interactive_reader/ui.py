@@ -1,4 +1,5 @@
 import sys
+import signal
 import operator
 import time
 import urwid
@@ -26,8 +27,9 @@ class TraceWalker(urwid.ListWalker):
         self._modified()
 
     def seek_to_focus(self):
-        self._parser.get_previous_n_records(abs(self._current_trace_position - self._focus))
+        self._parser.get_previous_n_records(abs(self._current_trace_position - self._focus) + 1)
         self._reset()
+        self._modified()
         
     def reread(self):
         self._reset()
@@ -40,7 +42,7 @@ class TraceWalker(urwid.ListWalker):
         if not record:
             return None
         else:
-            return AnsiText(record)
+            return AnsiText(record, wrap = "clip")
         
     def _get_record_at_pos(self, pos):
         if pos in self._record_cache:
@@ -127,7 +129,6 @@ class TraceWalker(urwid.ListWalker):
             
         return found_record
 
-
     def enable_debug(self, enable_debug = True):
         self._parser.enable_debug(enable_debug)
         self.reread()
@@ -195,6 +196,8 @@ class TraceReaderUI(object):
         self._last_filter = None
         self._debug_enabled = True
         self._show_field_names = False
+        self._cancel_operation = False
+        self._progress_notification_record_multiple = 0
 
         footer_columns = urwid.AttrMap(urwid.Columns([self._footer, self._info_line]), 'foot')
         wrapped_edit_line = urwid.Columns([('fixed', len(self._command_indicator_string), self._command_indicator), self._edit_line])
@@ -204,17 +207,48 @@ class TraceReaderUI(object):
 
     def _metadata_updated_handler(self):
         self._edit_line.set_completer(MultipleSelectionCompleter(StringlistCompleter(self._trace_walker.get_completion_names())))
+
+    def _get_progress_line(self, records_processed, current_offset):
+        if not self._command_mode:
+            return None
         
-    def _parser_event_handler(self, event):
+        if 'forward' in self._command_mode or 'filter' in self._command_mode:
+            end_offset = self._trace_parser.end_offset
+        else:
+            end_offset = 0;
+
+        remaining_records_to_process = abs(current_offset - end_offset)
+        remaining_percent = remaining_records_to_process / (self._trace_parser.end_offset / 100)
+        return '%d%% remaining to process' % (remaining_percent,)
+            
+    def _parser_event_handler(self, event, **kw):
         if event == 'metadata_updated':
             self._metadata_updated_handler()
+        if event == 'operation_in_progress':
+            records_processed = kw['records_processed']
+            current_offset = kw['current_offset']
+            if records_processed >= self._next_redraw_record_count:
+                progress_line = self._get_progress_line(records_processed, current_offset)
+                if progress_line:
+                    self._info_line.set_text(progress_line)
+                self.loop.draw_screen()
+                self._next_redraw_record_count += self._progress_notification_record_block_size
+
+            if self._cancel_operation:
+                self._trace_parser.cancel_ongoing_operation()
+                self._cancel_operation = False
+            
+        if event == 'interrupted':
+            self._cancel_operation = True
         
     def open_file(self, filename):
         self._trace_parser = TraceParser(filename, self._parser_event_handler)
+        self._progress_notification_record_block_size = self._trace_parser.end_offset / 10
+        self._next_redraw_record_count = self._progress_notification_record_block_size
         self._trace_parser.set_color(True)
         self._trace_parser.set_relative_ts(False)
         self._trace_parser.set_indent(True)
-        self._trace_parser.set_show_field_names(True)
+        self._trace_parser.set_show_field_names(False)
         self._trace_walker.set_parser(self._trace_parser)
         self._trace_walker.reread()
         self._footer.set_text(self._footer_text + ['    ', filename])
@@ -234,7 +268,7 @@ class TraceReaderUI(object):
             walker = self._trace_walker.get_prev
             op = operator.sub
             
-        while True:
+        while not self._cancel_operation:
             record, _ = walker(op(pos, i))
             i += 1
             if not record:
@@ -257,12 +291,14 @@ class TraceReaderUI(object):
         start_time = time.time()
 
         _, pos = self._trace_view.get_focus()
-        self._trace_walker.get_next(pos)
         if self._command_mode == 'search_forward':
             result = self._trace_walker.find_next_by_expression(matcher)
             self._trace_view.set_focus(0, 'above')
         else:
+            self._trace_walker.get_prev(pos)
             result = self._trace_walker.find_previous_by_expression(matcher)
+            if not result:
+                self._trace_walker.get_next(pos - 1)
             self._trace_view.set_focus(0, 'below')
 
 
@@ -282,6 +318,7 @@ class TraceReaderUI(object):
         return result
     
     def _handle_search_command_string(self, command_str):
+        self._cancel_operation = False
         matcher = self._trace_walker.get_matcher_from_string(command_str)
         if command_str == 'focus':
             return self._trace_walker.get_focus()
@@ -307,14 +344,19 @@ class TraceReaderUI(object):
         
     def _handle_command_string(self, command_str):
         self._last_command = (self._command_mode, command_str)
+        self._next_redraw_record_count = self._progress_notification_record_block_size
         self._trace_walker.seek_to_focus()
+        self._trace_view.set_focus_valign('top')
+
         if self._command_mode in ('search_backward', 'search_forward'):
             status = self._handle_search_command_string(command_str)
         elif self._command_mode == 'filter':
             status = self._handle_filter_command_string(command_str)
 
-        self._set_info_line(str(status))
+        if status:
+            self._set_info_line(str(status))
         self._command_mode = None
+
 
             
     def _handle_command(self):
@@ -439,6 +481,8 @@ class TraceReaderUI(object):
             self._search_leave()
         if input in ('x'):
             self._toggle_field_names()
+        if input in ('t'):
+            self._toggle_function_traces()
 
         if input == 'end':
             self._trace_walker.seek_to_end()
@@ -456,7 +500,8 @@ class TraceReaderUI(object):
 
     def _cancel_pending_commands(self):
         if self._command_mode:
-            self._set_info_line('user cancelled search')
+            self._cancel_operation = True
+            self._set_info_line('Cancelled')
             self._clear_edit_line()
 
         self._main_frame.set_focus('body')
@@ -464,15 +509,14 @@ class TraceReaderUI(object):
     def _handle_keyboard_interrupt(self):
         self._cancel_pending_commands()
 
+    def _handle_sigint(self, signal, frame):
+        self._handle_keyboard_interrupt()
+        
     def run(self, filename):
+        signal.signal(signal.SIGINT, self._handle_sigint)
         self.loop = urwid.MainLoop(self._main_frame, AnsiText.get_palette() + palette, handle_mouse = False, unhandled_input=self._handle_input)
         self.open_file(filename)
-        while True:
-            try:
-                self.loop.run()
-                break
-            except KeyboardInterrupt:
-                self._handle_keyboard_interrupt()
+        self.loop.run()
 
 
 def main():

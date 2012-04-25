@@ -57,6 +57,7 @@ struct trace_file_info {
     char filename[0x100];
     char machine_id[0x100];
     long boot_time;
+    long long end_offset;
     int fd;
 };
 
@@ -64,6 +65,8 @@ enum trace_parser_event_e {
     TRACE_PARSER_COMPLETE_TYPED_RECORD_PROCESSED,
     TRACE_PARSER_MATCHED_RECORD,
     TRACE_PARSER_SEARCHING_METADATA,
+    TRACE_PARSER_OPERATION_IN_PROGRESS,
+    TRACE_PARSER_UNKNOWN_RECORD_ENCOUNTERED,
     TRACE_PARSER_FOUND_METADATA,
 };
 
@@ -87,6 +90,10 @@ struct buffer_dump_context_s {
     unsigned int num_chunks;
 };
 
+struct operation_progress_status_s {
+    long long records_processed;
+    long long current_offset;
+};
 
 enum trace_record_matcher_type {
     TRACE_MATCHER_TRUE,
@@ -158,6 +165,7 @@ typedef struct trace_parser {
     int indent;
     int relative_ts;
     int show_field_names;
+    bool_t cancel_ongoing_operation;
     struct trace_record_matcher_spec_s record_filter;
     unsigned int ignored_records_count;
     enum trace_input_stream_type stream_type;
@@ -179,6 +187,8 @@ void TRACE_PARSER__set_filter(trace_parser_t *parser, struct trace_record_matche
 int TRACE_PARSER__find_next_record_by_expression(trace_parser_t *parser, struct trace_record_matcher_spec_s *expression);
 int TRACE_PARSER__find_previous_record_by_expression(trace_parser_t *parser, struct trace_record_matcher_spec_s *expression);
 int TRACE_PARSER__format_typed_record(trace_parser_t *parser, struct trace_parser_buffer_context *context, struct trace_record *record, char *formatted_record, unsigned int formatted_record_size);
+void TRACE_PARSER__cancel_ongoing_operation(trace_parser_t *parser);
+
 int TRACE_PARSER__dump(trace_parser_t *parser);
 int TRACE_PARSER__dump_statistics(trace_parser_t *parser);
 int TRACE_PARSER__process_next_from_memory(trace_parser_t *parser, struct trace_record *rec, char *formatted_record, unsigned int formatted_record_size, unsigned int *record_formatted);
