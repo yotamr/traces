@@ -504,8 +504,6 @@ do {                                                                            
             char enum_val_name[100];                                                                                         \
             get_enum_val_name(parser, context, param, (*(unsigned int *)pdata), enum_val_name, sizeof(enum_val_name));       \
             SIMPLE_APPEND_FORMATTED_TEXT(enum_val_name);                                                                     \
-            if ((param + 1)->flags != 0)                                                                                     \
-                SIMPLE_APPEND_FORMATTED_TEXT(delimiter);                                                                     \
             SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));                                                                 \
             pdata += sizeof(int);                                                                                           
 
@@ -573,23 +571,25 @@ static int format_typed_params(trace_parser_t *parser, struct trace_parser_buffe
 
         if (param->flags & TRACE_PARAM_FLAG_NESTED_LOG) {
             if (describe_params) {
-                APPEND_FORMATTED_TEXT(F_WHITE_BOLD("{ <%s> } "), param->type_name);
+                APPEND_FORMATTED_TEXT(F_WHITE_BOLD("{<%s>}"), param->type_name);
                 SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
             } else {
                 SIMPLE_APPEND_FORMATTED_TEXT(F_WHITE_BOLD("{ "));
                 int _bytes_processed;
                 total_length = format_typed_params(parser, context, (struct trace_record_typed *) pdata, formatted_record, formatted_record_size, total_length, &_bytes_processed, describe_params);
                 pdata += _bytes_processed;
-                SIMPLE_APPEND_FORMATTED_TEXT(F_WHITE_BOLD(" } "));
+                SIMPLE_APPEND_FORMATTED_TEXT(F_WHITE_BOLD(" }"));
                 SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
             }
         }
         
         if (param->flags & TRACE_PARAM_FLAG_CSTR) {
-            HANDLE_CSTR()
-        } else if (param->flags & TRACE_PARAM_FLAG_VARRAY) {
+            HANDLE_CSTR();
+        }
+        
+        if (param->flags & TRACE_PARAM_FLAG_VARRAY) {
             if (describe_params) {
-                SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD("<vstr> "));
+                SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD("<vstr>"));
                 SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
             } else {
                 HANDLE_VSTR();
@@ -598,7 +598,7 @@ static int format_typed_params(trace_parser_t *parser, struct trace_parser_buffe
         
         if (param->flags & TRACE_PARAM_FLAG_ENUM) {
             if (describe_params) {
-                APPEND_FORMATTED_TEXT(F_CYAN_BOLD("<%s> "), param->type_name);
+                APPEND_FORMATTED_TEXT(F_CYAN_BOLD("<%s>"), param->type_name);
                 SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
             } else {
                 WRITE_ENUM_FROM_PDATA();
