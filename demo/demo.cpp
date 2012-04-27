@@ -39,9 +39,9 @@ int main(void) {
     const char *some_str = "some variable string which is very very long";
     while (1) {
         increment_twice(&value);
+        DEBUG("Oh no");
         WARN(some_str, 100, 150, &the_class_ptr, 100, 100, 100, 100, some_str, 100, 150, 200, 500, 6710, 1021);
         value = calculate(CALCULATION_TYPE_DECREMENT, value);
-        usleep(10000);
     }
 
     return 0;        

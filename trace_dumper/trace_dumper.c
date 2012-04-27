@@ -34,6 +34,10 @@
 
 #define TRACE_FILE_MAX_RECORDS_PER_FILE        0x1000000
 
+// The threshold stands at about 60 MBps
+#define OVERWRITE_THRESHOLD_PER_SECOND (600000)
+#define TRACE_SECOND (1000000000)
+
 struct trace_mapped_metadata {
     struct iovec metadata_iovec[METADATA_IOVEC_SIZE];
     struct trace_record metadata_payload_record;
@@ -112,6 +116,10 @@ struct trace_dumper_configuration_s {
     unsigned int syslog;
     unsigned long long start_time;
     int no_color;
+    enum trace_severity minimal_allowed_severity;
+    unsigned long long last_overwrite_test_time;
+    unsigned long long last_overwrite_test_record_count;
+
 	struct trace_record_file record_file;
 	unsigned int last_flush_offset;
     enum operation_type op_type;
@@ -973,6 +981,17 @@ static int possibly_write_iovecs(struct trace_dumper_configuration_s *conf, unsi
     return 0;
 }
 
+static enum trace_severity get_minimal_severity(int severity_type)
+{
+    unsigned int count = 1;
+    while (!(severity_type & 1)) {
+        severity_type >>= 1;
+        count++;
+    }
+
+    return count;
+}
+
 static int trace_flush_buffers(struct trace_dumper_configuration_s *conf)
 {
     struct trace_mapped_buffer *mapped_buffer;
@@ -994,6 +1013,11 @@ static int trace_flush_buffers(struct trace_dumper_configuration_s *conf)
         int rc = dump_metadata_if_necessary(conf, mapped_buffer);
         if (0 != rc) {
             return rc;
+        }
+
+        if (get_minimal_severity(mapped_records->imutab->severity_type) <= conf->minimal_allowed_severity) {
+            WARN("Not dumping pid", mapped_buffer->pid, "with severity type", mapped_records->imutab->severity_type, "due to overwrite");
+            continue;
         }
         
         calculate_delta(mapped_records, &delta, &delta_a, &delta_b);
@@ -1103,6 +1127,31 @@ static int open_trace_file_if_necessary(struct trace_dumper_configuration_s *con
 
     return 0;
 }
+
+static void handle_overwrite(struct trace_dumper_configuration_s *conf)
+{
+    unsigned long long current_time = trace_get_nsec();
+    DEBUG("Checking overrwrite. Wrote", conf->record_file.records_written - conf->last_overwrite_test_record_count,
+                 "records in a second. Minimal severity is now", conf->minimal_allowed_severity);
+    if (current_time - conf->last_overwrite_test_time < TRACE_SECOND) {
+        return;
+    }
+    
+    if (conf->record_file.records_written - conf->last_overwrite_test_record_count > OVERWRITE_THRESHOLD_PER_SECOND) {
+        conf->minimal_allowed_severity = MIN(conf->minimal_allowed_severity + 1, TRACE_SEV__MAX);
+        WARN("Overrwrite occurred. Wrote", conf->record_file.records_written - conf->last_overwrite_test_record_count,
+             "records in a second. Minimal severity is now", conf->minimal_allowed_severity);
+    } else {
+        if (conf->minimal_allowed_severity) {
+            conf->minimal_allowed_severity = MAX(conf->minimal_allowed_severity - 1, 0);
+            INFO("Relaxing overwrite filter. Write", conf->record_file.records_written - conf->last_overwrite_test_record_count,
+                 "records in a second. Minimal severity is now", conf->minimal_allowed_severity);
+        }
+    }
+
+    conf->last_overwrite_test_time = current_time;
+    conf->last_overwrite_test_record_count = conf->record_file.records_written;
+}
     
 static int dump_records(struct trace_dumper_configuration_s *conf)
 {
@@ -1123,6 +1172,8 @@ static int dump_records(struct trace_dumper_configuration_s *conf)
         }
         
         usleep(20000);
+        handle_overwrite(conf);
+        
         if (!conf->attach_to_pid) {
             map_new_buffers(conf);
         }
