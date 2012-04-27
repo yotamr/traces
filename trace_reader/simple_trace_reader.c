@@ -42,7 +42,8 @@ static const char *usage =
     " -t  --time                 Dump all records beginning at timestamp (in nsecs)             \n"
     " -o  --show-field-names     Show field names for all trace records                         \n"
     " -r  --relative-timestamp   Print timestamps relative to boot time                         \n"
-    " -m  --dump-metadata        Dump metadata in specified files                               \n"
+    " -s  --print-stats          Print per-log occurrence count                                 \n"
+    " -m  --dump-metadata        Dump metadata                                                  \n"
     "\n";
 
 static const struct option longopts[] = {
@@ -52,6 +53,7 @@ static const struct option longopts[] = {
     { "dump-debug", 0, 0, 'e'},
     { "dump-functions", 0, 0, 'f'},
     { "dump-metadata", 0, 0, 'm'},
+    { "print-stats", 0, 0, 's'},
     { "show-field-name", 0, 0, 'o'},
     { "relative-timestamp", required_argument, 0, 't'},
 	{ 0, 0, 0, 0}
