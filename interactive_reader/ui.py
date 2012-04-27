@@ -481,8 +481,6 @@ class TraceReaderUI(object):
             self._search_leave()
         if input in ('x'):
             self._toggle_field_names()
-        if input in ('t'):
-            self._toggle_function_traces()
 
         if input == 'end':
             self._trace_walker.seek_to_end()
