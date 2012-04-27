@@ -28,6 +28,7 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 #include "list_template.h"
 #include "trace_metadata_util.h"
 #include "trace_parser.h"
+#include "cached_file.h"
 
 CREATE_LIST_IMPLEMENTATION(BufferParseContextList, struct trace_parser_buffer_context)
 CREATE_LIST_IMPLEMENTATION(RecordsAccumulatorList, struct trace_record_accumulator)
@@ -71,7 +72,7 @@ CREATE_LIST_IMPLEMENTATION(RecordsAccumulatorList, struct trace_record_accumulat
 static int read_next_record(trace_parser_t *parser, struct trace_record *record)
 {
     int rc;
-    rc = read(parser->file_info.fd, record, sizeof(*record));
+    rc = cached_file__read(&parser->file_info.cached_file, record, sizeof(*record));
     if (rc == 0) {
         parser->buffer_dump_context.file_offset++;
         record->rec_type = TRACE_REC_TYPE_END_OF_FILE;
@@ -91,7 +92,6 @@ void trace_parser_init(trace_parser_t *parser, trace_parser_event_handler_t even
     memset(parser, 0, sizeof(*parser));
     parser->event_handler = event_handler;
     parser->arg = arg;
-    parser->file_info.fd = -1;
     parser->stream_type = stream_type;
     BufferParseContextList__init(&parser->buffer_contexts);
     parser->record_filter.type = TRACE_MATCHER_TRUE;
@@ -758,7 +758,7 @@ static void process_buffer_chunk_record(trace_parser_t *parser, struct trace_rec
 
 static long long trace_file_current_offset(trace_parser_t *parser)
 {
-    if (parser->file_info.fd < 0) {
+    if (!cached_file__is_open(&parser->file_info.cached_file)) {
         return -1;
     }
 
@@ -975,11 +975,17 @@ static int process_dump_header_record(trace_parser_t *parser, struct trace_recor
         }
         i++;
     }
+
     if (i) {
         current_offset = TRACE_PARSER__seek(parser, parser->buffer_dump_context.record_dump_contexts[0].start_offset, SEEK_SET);
+        rc = cached_file__fill_cache(&parser->file_info.cached_file, (dump_header->total_dump_size -1) * sizeof(struct trace_record));
+        if (0 != rc) {
+            return -1;
+        }
     } else {
         current_offset = TRACE_PARSER__seek(parser, dump_header->first_chunk_offset - 1 + dump_header->total_dump_size, SEEK_SET);
     }
+
     
     if (current_offset == -1) {
         return -1;
@@ -1521,7 +1527,7 @@ int TRACE_PARSER__process_next_from_memory(trace_parser_t *parser, struct trace_
 
 int TRACE_PARSER__process_next_record_from_file(trace_parser_t *parser)
 {
-    if (parser->file_info.fd < 0) {
+    if (!cached_file__is_open(&parser->file_info.cached_file)) {
         return -1;
     }
 
@@ -1603,7 +1609,7 @@ Exit:
 
 int TRACE_PARSER__process_previous_record_from_file(trace_parser_t *parser)
 {
-    if (parser->file_info.fd < 0) {
+    if (!cached_file__is_open(&parser->file_info.cached_file)) {
         return -1;
     }
 
@@ -1677,23 +1683,19 @@ long long trace_end_offset(trace_parser_t *parser)
 
 int TRACE_PARSER__from_file(trace_parser_t *parser, const char *filename, trace_parser_event_handler_t event_handler, void *arg)
 {
-    int fd;
     int rc;
 
     trace_parser_init(parser, event_handler, arg, TRACE_INPUT_STREAM_TYPE_SEEKABLE_FILE);
-    fd = open(filename, O_RDONLY);
-    if (fd < 0) {
+    rc = cached_file__open(&parser->file_info.cached_file, filename, O_RDONLY);
+    if (0 != rc) {
         return -1;
-    } else {
-        parser->file_info.fd = fd;
     }
-
+    
     struct trace_record file_header;
 
     rc = read_file_header(parser, &file_header);
     if (0 != rc) {
-        close(fd);
-        parser->file_info.fd = -1;
+        cached_file__close(&parser->file_info.cached_file);
         return -1;
     }
     
@@ -1712,8 +1714,8 @@ void TRACE_PARSER__from_external_stream(trace_parser_t *parser, trace_parser_eve
 
 void TRACE_PARSER__fini(trace_parser_t *parser)
 {
-    if (parser->file_info.fd >= 0) {
-        close(parser->file_info.fd);
+    if (cached_file__is_open(&parser->file_info.cached_file)) {
+        cached_file__close(&parser->file_info.cached_file);
     }
 
     int i;
@@ -1732,11 +1734,11 @@ long long TRACE_PARSER__seek(trace_parser_t *parser, long long offset, int whenc
         return -1;
     }
     
-    if (parser->file_info.fd < 0) {
+    if (!cached_file__is_open(&parser->file_info.cached_file)) {
         return -1;
     }
 
-    off_t new_offset = lseek(parser->file_info.fd, absolute_offset, whence);
+    off_t new_offset = cached_file__lseek(&parser->file_info.cached_file, absolute_offset, whence);
     if (new_offset == -1) {
         return -1;
     } else {
@@ -1910,51 +1912,50 @@ unsigned long long TRACE_PARSER__seek_to_time(trace_parser_t *parser, unsigned l
 
 unsigned long long get_max_tsc_offset(trace_parser_t *parser)
 {
-    off_t current_offset = lseek(parser->file_info.fd, 0, SEEK_CUR);
+    off_t current_offset = trace_file_current_offset(parser);
     struct trace_record record;
     unsigned long long max_tsc_offset = 0;
     int rc;
-    lseek(parser->file_info.fd, 0, SEEK_END);
+    TRACE_PARSER__seek(parser, 0, SEEK_END);
     while (1) {
-        lseek(parser->file_info.fd, -(sizeof(struct trace_record)), SEEK_END);
-        rc = read(parser->file_info.fd, &record, sizeof(record));
+        TRACE_PARSER__seek(parser, -1, SEEK_END);
+        rc = read_next_record(parser, &record);
         if (rc < 0) {
             return 0;
         }
 
         if (record.termination & TRACE_TERMINATION_FIRST) {
-            max_tsc_offset = lseek(parser->file_info.fd, 0, SEEK_CUR) / sizeof(struct trace_record);
+            max_tsc_offset = trace_file_current_offset(parser) / sizeof(struct trace_record);
             break;
         }
 
-        lseek(parser->file_info.fd, -(sizeof(struct trace_record)), SEEK_END);
+        TRACE_PARSER__seek(parser,  -1, SEEK_END);
     }
 
-    lseek(parser->file_info.fd, current_offset, SEEK_CUR);
+    TRACE_PARSER__seek(parser, current_offset, SEEK_CUR);
     return max_tsc_offset;
 }
 
 unsigned long long get_min_tsc_offset(trace_parser_t *parser)
 {
-    off_t current_offset = lseek(parser->file_info.fd, 0, SEEK_CUR);
+    off_t current_offset = trace_file_current_offset(parser);
     struct trace_record record;
     unsigned long long min_tsc_offset = 0;
     int rc;
-    lseek(parser->file_info.fd, 0, SEEK_SET);
+    TRACE_PARSER__seek(parser, 0, SEEK_SET);
     while (1) {
-        rc = read(parser->file_info.fd, &record, sizeof(record));
-        if (rc < 0) {
+        rc = read_next_record(parser, &record);
+        if (0 != rc) {
             return 0;
         }
 
         if (record.termination & TRACE_TERMINATION_FIRST) {
-            min_tsc_offset = lseek(parser->file_info.fd, 0, SEEK_CUR) / sizeof(struct trace_record);
+            min_tsc_offset = trace_file_current_offset(parser);
             break;
         }
-
     }
 
-    lseek(parser->file_info.fd, current_offset, SEEK_CUR);
+    TRACE_PARSER__seek(parser, current_offset, SEEK_SET);
     return min_tsc_offset;
 }
 

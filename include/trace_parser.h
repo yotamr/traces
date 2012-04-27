@@ -21,6 +21,7 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 #include "list_template.h"
 #include <stdio.h>
 #include "trace_defs.h"
+#include "cached_file.h"
 
 enum trace_parser_failure_e {
     TRACE_PARSER_NO_METADATA,
@@ -58,7 +59,7 @@ struct trace_file_info {
     char machine_id[0x100];
     long boot_time;
     long long end_offset;
-    int fd;
+    cached_file_t cached_file;
 };
 
 enum trace_parser_event_e {
@@ -151,7 +152,6 @@ struct trace_record_matcher_spec_s {
 struct trace_parser;
 typedef void (*trace_parser_event_handler_t)(struct trace_parser *parser, enum trace_parser_event_e event, void *event_data, void *arg);
 typedef struct trace_parser {
-    int fd;
     struct trace_file_info file_info;
     BufferParseContextList buffer_contexts;
     RecordsAccumulatorList records_accumulators;
