@@ -36,7 +36,8 @@
 
 // The threshold stands at about 60 MBps
 #define OVERWRITE_THRESHOLD_PER_SECOND (600000)
-#define TRACE_SECOND (1000000000)
+#define TRACE_SECOND (1000000000ULL)
+#define RELAXATION_BACKOFF (TRACE_SECOND * 10)
 
 struct trace_mapped_metadata {
     struct iovec metadata_iovec[METADATA_IOVEC_SIZE];
@@ -117,6 +118,7 @@ struct trace_dumper_configuration_s {
     unsigned long long start_time;
     int no_color;
     enum trace_severity minimal_allowed_severity;
+    unsigned long long next_possible_overwrite_relaxation;
     unsigned long long last_overwrite_test_time;
     unsigned long long last_overwrite_test_record_count;
 
@@ -1139,10 +1141,11 @@ static void handle_overwrite(struct trace_dumper_configuration_s *conf)
     
     if (conf->record_file.records_written - conf->last_overwrite_test_record_count > OVERWRITE_THRESHOLD_PER_SECOND) {
         conf->minimal_allowed_severity = MIN(conf->minimal_allowed_severity + 1, TRACE_SEV__MAX);
+        conf->next_possible_overwrite_relaxation = current_time + RELAXATION_BACKOFF;
         WARN("Overrwrite occurred. Wrote", conf->record_file.records_written - conf->last_overwrite_test_record_count,
              "records in a second. Minimal severity is now", conf->minimal_allowed_severity);
     } else {
-        if (conf->minimal_allowed_severity) {
+        if (conf->minimal_allowed_severity && (current_time > conf->next_possible_overwrite_relaxation)) {
             conf->minimal_allowed_severity = MAX(conf->minimal_allowed_severity - 1, 0);
             INFO("Relaxing overwrite filter. Write", conf->record_file.records_written - conf->last_overwrite_test_record_count,
                  "records in a second. Minimal severity is now", conf->minimal_allowed_severity);
