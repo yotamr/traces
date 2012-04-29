@@ -37,7 +37,6 @@ int cached_file__open(struct cached_file_s *self, const char *pathname, int flag
     
     memset(self, 0, sizeof(*self));
     self->fd = fd;
-    self->file_end_offset = end_offset(self->fd);
     return 0;
 }
 
@@ -57,7 +56,7 @@ long long cached_file__lseek(struct cached_file_s *self, off_t offset, int whenc
     } else if (whence == SEEK_CUR) {
         new_offset = self->current_offset + offset;
     } else if (whence == SEEK_END) {
-        new_offset = self->file_end_offset + offset;
+        new_offset = end_offset(self->fd) + offset;
     } else {
         return -1;
     }
@@ -93,7 +92,8 @@ int cached_file__fill_cache(struct cached_file_s *self, size_t size)
     if (NULL == self->cache) {
         return -1;
     }
-    
+
+    off_t current_offset = lseek(self->fd, 0, SEEK_CUR);
     size_t rc = read(self->fd, self->cache, size);
     if (rc != size) {
         if (self->cache) {
@@ -104,7 +104,7 @@ int cached_file__fill_cache(struct cached_file_s *self, size_t size)
         return -1;
     }
 
-    self->cache_start_offset = self->current_offset;
+    self->cache_start_offset = current_offset;
     self->cache_end_offset = self->cache_start_offset + rc;
     return 0;
 }
