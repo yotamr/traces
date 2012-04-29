@@ -1296,6 +1296,7 @@ static int read_smallest_ts_record(trace_parser_t *parser, struct trace_record *
     if (!inside_record_dump(parser)) {
         TRACE_PARSER__seek(parser, parser->buffer_dump_context.end_offset, SEEK_SET);
     }
+
     return 0;
 }
 
@@ -1562,36 +1563,37 @@ static int process_previous_record_from_file(trace_parser_t *parser, struct trac
         // TODO: Refactor this
         if (chunk_index < 0) {
             if (parser->buffer_dump_context.previous_dump_offset == 0) {
-                rc = -1; goto Exit;;
+                rc = -1; goto Exit;
             }
             
             read_record_at_offset(parser, parser->buffer_dump_context.previous_dump_offset, &record);
             if (record.rec_type != TRACE_REC_TYPE_DUMP_HEADER) {
-                rc = -1; goto Exit;;
+                rc = -1; goto Exit;
             }
 
             rc = process_dump_header_record_from_end(parser, filter, &record);
             if (0 != rc) {
-                rc = -1; goto Exit;;
+                rc = -1; goto Exit;
             }
 
             chunk_index = get_biggest_ts_record_chunk_index(parser);
+
             if (chunk_index < 0) {
-                rc = -1; goto Exit;;
+                rc = -1; goto Exit;
             }
         } 
 
         rc = read_record_at_offset(parser, parser->buffer_dump_context.record_dump_contexts[chunk_index].current_offset, &record);
         if (0 != rc) {
-            rc = -1; goto Exit;;
+            rc = -1; goto Exit;
         }
-
-
+        
         // TODO: Unify all of this under process_single_record()
         if (record.rec_type == TRACE_REC_TYPE_END_OF_FILE || record.rec_type == TRACE_REC_TYPE_DUMP_HEADER || record.rec_type == TRACE_REC_TYPE_BUFFER_CHUNK) {
             parser->buffer_dump_context.record_dump_contexts[chunk_index].current_offset--;
             continue;
         }
+        
         rc = process_single_record(parser, filter, &record, &complete_typed_record_found, FALSE, event_handler, arg);
         if (0 == rc && complete_typed_record_found) {
             parser->buffer_dump_context.record_dump_contexts[chunk_index].current_offset--;
@@ -1894,11 +1896,6 @@ unsigned long long TRACE_PARSER__seek_to_time(trace_parser_t *parser, unsigned l
     if (0 != rc) {
         *error_occurred = 1;
         return -1;
-    }
-
-    rc = TRACE_PARSER__find_next_record_by_expression(parser, &parser->record_filter);
-    if (0 != rc) {
-        rc = TRACE_PARSER__find_previous_record_by_expression(parser, &parser->record_filter);
     }
 
     if (0 != rc) {

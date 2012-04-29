@@ -153,7 +153,6 @@ class TraceFilter(object):
         if not end_time:
             return None
 
-        print start_time, end_time
         new_filter = _cparser_defs.trace_record_matcher_spec_s()
         new_filter.type = TRACE_MATCHER_TIMERANGE
         new_filter.u.time_range.start = start_time

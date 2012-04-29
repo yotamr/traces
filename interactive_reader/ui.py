@@ -50,7 +50,6 @@ class TraceWalker(urwid.ListWalker):
                 return None, None
 
         if self._current_trace_position > pos:
-            print 'TRACE offset', pos, self._current_trace_position
             records = [(self._format_raw_record(formatted_record), raw_record)
                        for formatted_record, raw_record in self._parser.get_previous_n_records(self._current_trace_position - pos)]
             for i, (formatted_record, raw_record) in enumerate(records):
