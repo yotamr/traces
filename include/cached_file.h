@@ -13,7 +13,6 @@ typedef struct cached_file_s {
     off_t cache_start_offset;
     off_t cache_end_offset;
     off_t current_offset;
-    off_t file_end_offset;
     int cache_size;
 } cached_file_t;
 
