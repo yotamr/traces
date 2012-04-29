@@ -26,14 +26,12 @@ class TraceWalker(urwid.ListWalker):
         self._focus = 0
         self._modified()
 
-    def seek_to_focus(self):
-        self._parser.get_previous_n_records(abs(self._current_trace_position - self._focus) + 1)
+    def seek_to_pos(self, pos):
+        self._parser.get_previous_n_records(abs(self._current_trace_position - pos) + 1)
         self._reset()
-        self._modified()
         
     def reread(self):
         self._reset()
-        self._modified()
     
     def set_parser(self, parser):
         self._parser = parser
@@ -52,11 +50,12 @@ class TraceWalker(urwid.ListWalker):
                 return None, None
 
         if self._current_trace_position > pos:
+            print 'TRACE offset', pos, self._current_trace_position
             records = [(self._format_raw_record(formatted_record), raw_record)
                        for formatted_record, raw_record in self._parser.get_previous_n_records(self._current_trace_position - pos)]
             for i, (formatted_record, raw_record) in enumerate(records):
                 self._record_cache[self._current_trace_position - (i + 1)] = (formatted_record, raw_record)
-
+            
             formatted_record = records[-1][0]
         elif self._current_trace_position < pos:
             records = [(self._format_raw_record(formatted_record), raw_record)
@@ -109,7 +108,7 @@ class TraceWalker(urwid.ListWalker):
     def seek_to_time(self, ts):
         result = self._parser.seek_to_time(ts)
         if result:
-            self.reread()
+            self._reset()
             
         return result
 
@@ -117,22 +116,17 @@ class TraceWalker(urwid.ListWalker):
         found_record = self._parser.find_next_by_expression(matcher.filter)
         if found_record:
             self._reset()
-            self._parser.get_previous_n_records(1)
-            self.reread()
-            
+
+        self._parser.get_previous_n_records(1)
         return found_record
 
     def find_previous_by_expression(self, matcher):
         found_record = self._parser.find_previous_by_expression(matcher.filter)
         if found_record:
-            self.reread()
+            self._reset()
             
         return found_record
 
-    def enable_debug(self, enable_debug = True):
-        self._parser.enable_debug(enable_debug)
-        self.reread()
-        
     def set_indent(self, set_indent = True):
         self._parser.set_indent(set_indent)
 
@@ -276,8 +270,6 @@ class TraceReaderUI(object):
 
             record_text = record.get_text()[0]
             if record_text.find(str(search_string)) != -1:
-                self._trace_view.set_focus_valign('top')
-                self._trace_view.set_focus(pos + i)
                 break
 
 
@@ -297,8 +289,6 @@ class TraceReaderUI(object):
         else:
             self._trace_walker.get_prev(pos)
             result = self._trace_walker.find_previous_by_expression(matcher)
-            if not result:
-                self._trace_walker.get_next(pos - 1)
             self._trace_view.set_focus(0, 'below')
 
 
@@ -312,9 +302,6 @@ class TraceReaderUI(object):
             result = 'search failed after %f seconds' % (search_time,)
 
             
-        self._trace_view.set_focus(0, 'below')
-        self._trace_view.set_focus_valign('top')
-
         return result
     
     def _handle_search_command_string(self, command_str):
@@ -341,12 +328,14 @@ class TraceReaderUI(object):
             return 'Filter set'
         else:
             return 'Error setting filter'
+
+    def _seek_to_top(self):
+        self._trace_walker.seek_to_pos(self._trace_view.get_top_position())
         
     def _handle_command_string(self, command_str):
         self._last_command = (self._command_mode, command_str)
         self._next_redraw_record_count = self._progress_notification_record_block_size
-        self._trace_walker.seek_to_focus()
-        self._trace_view.set_focus_valign('top')
+        self._seek_to_top()
 
         if self._command_mode in ('search_backward', 'search_forward'):
             status = self._handle_search_command_string(command_str)
@@ -356,6 +345,7 @@ class TraceReaderUI(object):
         if status:
             self._set_info_line(str(status))
         self._command_mode = None
+        self._trace_view.set_focus_to_top_widget()
 
 
             
@@ -369,11 +359,6 @@ class TraceReaderUI(object):
         self._main_frame.set_focus('footer')
         self._command_mode = 'search_' + direction
         self._command_indicator.set_text(self._command_indicator_string)
-
-    def _do_debug_enabled(self):
-        self._debug_enabled = not self._debug_enabled
-        self._trace_walker.set_indent(self._debug_enabled)
-        self._trace_walker.enable_debug(self._debug_enabled)
 
     def _do_filter(self, new_filter = False):
         self._main_frame.set_focus('footer')
@@ -450,7 +435,7 @@ class TraceReaderUI(object):
     def _toggle_field_names(self):
         self._show_field_names = not self._show_field_names
         self._trace_parser.set_show_field_names(self._show_field_names)
-        self._trace_walker.seek_to_focus()
+        self._seek_to_top()
         
     def _handle_input(self, input):
         if input in ('q', 'Q'):

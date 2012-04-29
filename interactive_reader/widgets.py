@@ -142,3 +142,10 @@ class AlwaysOnTopListBox(urwid.ListBox):
             return
 
         self.set_focus(top[1][-1][1])
+
+    def get_top_position(self):
+        middle, top, bottom = self.calculate_visible((0, 100), 100)
+        if not top[1]:
+            return middle[2]
+
+        return top[1][-1][1]

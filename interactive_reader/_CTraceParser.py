@@ -73,7 +73,6 @@ def make_bound_handler(parser_obj):
         _traces_so.TRACE_PARSER__format_typed_record(parser, complete_record_ptr.contents.buffer, complete_record_ptr.contents.record, formatted_record, 1024 * 10, byref(format_length))
         parser_obj.record_ready = True
         parser_obj.formatted_record = formatted_record.value
-        
         record_copy = _cparser_defs.trace_record()
         pointer(record_copy)[0] = complete_record_ptr.contents.record[0]
         parser_obj.raw_record = record_copy
