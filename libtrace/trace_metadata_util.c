@@ -34,7 +34,7 @@ static void relocate_descriptor_parameters(void *old_base, void *new_base, struc
 
     while (param->flags != 0) {
 
-        if (param->flags & ((TRACE_PARAM_FLAG_CSTR | TRACE_PARAM_FLAG_ENUM | TRACE_PARAM_FLAG_NESTED_LOG))) {
+        if (param->str) {
             relocate_ptr((unsigned long long) old_base, (unsigned long long) new_base, (unsigned long long *) &param->str);
         }
 

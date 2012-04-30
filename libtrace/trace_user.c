@@ -50,7 +50,7 @@ static void copy_log_params_to_allocated_buffer(struct trace_log_descriptor *log
     struct trace_param_descriptor *param = log_desc->params;
     while (param->flags != 0) {
         __builtin_memcpy(*params, param, sizeof(struct trace_param_descriptor));
-        if (param->flags & (TRACE_PARAM_FLAG_CSTR | TRACE_PARAM_FLAG_ENUM | TRACE_PARAM_FLAG_NESTED_LOG)) {
+        if (param->str) {
             ALLOC_STRING((*params)->str, param->str);
         }
 
@@ -158,8 +158,8 @@ static void copy_log_section_shared_area(int shm_fd, const char *buffer_name,
 
 static void param_alloc_size(struct trace_param_descriptor *params, unsigned int *alloc_size, unsigned int *total_params)
 {
-    while (params->flags != 0) { 
-        if (params->flags & (TRACE_PARAM_FLAG_CSTR | TRACE_PARAM_FLAG_ENUM | TRACE_PARAM_FLAG_RECORD)) {
+    while (params->flags != 0) {
+        if (params->str) {
             int len = strlen(params->str) + 1;
             *alloc_size += len;
         }
@@ -264,6 +264,7 @@ static void map_static_log_data(const char *buffer_name)
     copy_log_section_shared_area(shm_fd, buffer_name, log_descriptor_count, total_log_descriptor_params,
                                  type_definition_count, enum_value_count,
                                  sizeof(struct trace_metadata_region) + alloc_size);
+
 }
 
 static void init_records_immutable_data(struct trace_records *records, unsigned long num_records, int severity_type)
