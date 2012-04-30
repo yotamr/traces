@@ -1018,9 +1018,17 @@ static bool_t params_have_type_name(struct trace_param_descriptor *param, const 
     return FALSE;
 }
 
-static bool_t record_params_contain_value(struct trace_record *record, const char *param_name, struct trace_param_descriptor *param, unsigned long long value, unsigned int *log_size)
+static bool_t record_params_contain_value(struct trace_parser_buffer_context *buffer, struct trace_record_typed *typed_record, const char *param_name, const char *const_str, unsigned long long value, unsigned int *log_size)
 {
-    unsigned char *pdata = record->u.typed.payload;
+    unsigned int metadata_index = typed_record->log_id;
+    if (metadata_index >= buffer->metadata->log_descriptor_count) {
+        return FALSE;
+    }
+
+    struct trace_log_descriptor *log_desc = &buffer->descriptors[metadata_index];
+    struct trace_param_descriptor *param = log_desc->params;
+
+    unsigned char *pdata = typed_record->payload;
     unsigned long long param_value;
     bool_t ret = FALSE;
     for (; param->flags != 0; param++) {
@@ -1053,13 +1061,20 @@ static bool_t record_params_contain_value(struct trace_record *record, const cha
             valid_value = TRUE;
         }
 
+        if (param->flags & TRACE_PARAM_FLAG_CSTR && const_str) {
+            if (strstr(param->const_str, const_str)) {
+                return TRUE;
+            }
+        }
+
         if (param->flags & TRACE_PARAM_FLAG_NESTED_LOG) {
             unsigned int _log_size = 0;
-            if (record_params_contain_value((struct trace_record *) pdata, param_name, param, value, &_log_size)) {
+            if (record_params_contain_value(buffer, (struct trace_record_typed *) pdata, param_name, const_str, value, &_log_size)) {
+                pdata += _log_size;
                 ret = TRUE;
                 break;
             }
-            
+
             pdata += _log_size;
             valid_value = TRUE;
         }
@@ -1080,7 +1095,6 @@ static bool_t record_params_contain_value(struct trace_record *record, const cha
             continue;
         }
         
-
         if (param_name) {
             if (!(param->param_name)) {
                 continue;
@@ -1091,12 +1105,12 @@ static bool_t record_params_contain_value(struct trace_record *record, const cha
             }
         }
 
-        if (valid_value && value == param_value) {
+        if (valid_value && value == param_value && !const_str) {
             ret = TRUE;
         }        
     }
 
-    *log_size = pdata - record->u.typed.payload;
+    *log_size = (char *) pdata - (char *) typed_record;
     return ret;
 }
 
@@ -1160,10 +1174,13 @@ static bool_t match_record_with_match_expression(struct trace_record_matcher_spe
         break;
         
     case TRACE_MATCHER_LOG_PARAM_VALUE:
-        return record_params_contain_value(record, NULL, log_desc->params, matcher->u.param_value, &_log_size);
+        return record_params_contain_value(buffer, &record->u.typed, NULL, NULL, matcher->u.param_value, &_log_size);
         break;
     case TRACE_MATCHER_LOG_NAMED_PARAM_VALUE:
-        return record_params_contain_value(record, matcher->u.named_param_value.param_name, log_desc->params, matcher->u.named_param_value.param_value, &_log_size);
+        return record_params_contain_value(buffer, &record->u.typed, matcher->u.named_param_value.param_name, NULL, matcher->u.named_param_value.param_value, &_log_size);
+        break;
+    case TRACE_MATCHER_CONST_SUBSTRING:
+        return record_params_contain_value(buffer, &record->u.typed, NULL, matcher->u.const_string, 0, &_log_size);
         break;
     case TRACE_MATCHER_TIMERANGE:
         return ((record->ts < matcher->u.time_range.end) && (record->ts > matcher->u.time_range.start));
@@ -1484,7 +1501,7 @@ static void dump_metadata(trace_parser_t *parser, enum trace_parser_event_e even
     char formatted_template[512];
     for (i = 0; i < context->metadata->log_descriptor_count; i++) {
         log_id_to_log_template(parser, context, i, formatted_template, sizeof(formatted_template));
-        printf("%s\n", formatted_template);
+        printf("(%d) %s\n", i, formatted_template);
     }
 }
 

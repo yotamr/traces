@@ -113,6 +113,7 @@ enum trace_record_matcher_type {
     TRACE_MATCHER_LOG_NAMED_PARAM_VALUE,
     TRACE_MATCHER_PROCESS_NAME,
     TRACE_MATCHER_NESTING,
+    TRACE_MATCHER_CONST_SUBSTRING,
 };
 
 typedef struct trace_record_matcher_spec_s trace_record_matcher_spec_s;
@@ -131,6 +132,7 @@ struct trace_record_matcher_spec_s {
         char function_name[0x100];
         char type_name[0x100];
         char process_name[0x100];
+        char const_string[0x100];
         unsigned long long param_value;
         unsigned short nesting;
         

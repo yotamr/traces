@@ -21,6 +21,7 @@ enum op_type_e {
 
 struct trace_reader_conf {
     enum op_type_e op_type;
+    const char *grep_expression;
     unsigned int severity_mask;
     int tail;
     int no_color;
@@ -29,6 +30,8 @@ struct trace_reader_conf {
     long long from_time;
     FilenameList files_to_process;
     struct trace_record_matcher_spec_s severity_filter[SEVERITY_FILTER_LEN];
+    struct trace_record_matcher_spec_s grep_filter;
+    struct trace_record_matcher_spec_s complete_filter;
 };
 
 static const char *usage = 
@@ -42,6 +45,7 @@ static const char *usage =
     " -t  --time                 Dump all records beginning at timestamp (in nsecs)             \n"
     " -o  --show-field-names     Show field names for all trace records                         \n"
     " -r  --relative-timestamp   Print timestamps relative to boot time                         \n"
+    " -g  --grep [expression]    Display records whose constant string matches the expression   \n"
     " -s  --print-stats          Print per-log occurrence count                                 \n"
     " -m  --dump-metadata        Dump metadata                                                  \n"
     "\n";
@@ -56,6 +60,7 @@ static const struct option longopts[] = {
     { "print-stats", 0, 0, 's'},
     { "show-field-name", 0, 0, 'o'},
     { "relative-timestamp", required_argument, 0, 't'},
+    { "grep", required_argument, 0, 'g'},
 	{ 0, 0, 0, 0}
 };
 
@@ -64,7 +69,7 @@ static void print_usage(void)
     printf(usage, "simple_trace_reader");
 }
 
-static const char shortopts[] = "moft:hdnesr";
+static const char shortopts[] = "g:moft:hdnesr";
 
 static int parse_command_line(struct trace_reader_conf *conf, int argc, char **argv)
 {
@@ -105,6 +110,9 @@ static int parse_command_line(struct trace_reader_conf *conf, int argc, char **a
         case 'm':
             conf->op_type = OP_TYPE_DUMP_METADATA;
             break;
+        case 'g':
+            conf->grep_expression = optarg;
+            break;
         case 'o':
             conf->show_field_names = TRUE;
             break;
@@ -134,10 +142,27 @@ void read_event_handler(struct trace_parser  __attribute__((unused)) *parser, en
     
 }
 
-static void set_parser_params(struct trace_reader_conf *conf, trace_parser_t *parser)
+static void set_parser_filter(struct trace_reader_conf *conf, trace_parser_t *parser)
 {
     TRACE_PARSER__matcher_spec_from_severity_mask(conf->severity_mask, conf->severity_filter, ARRAY_LENGTH(conf->severity_filter));
-    TRACE_PARSER__set_filter(parser, conf->severity_filter);
+    struct trace_record_matcher_spec_s *filter = conf->severity_filter;
+    if (conf->grep_expression) {
+        conf->grep_filter.type = TRACE_MATCHER_CONST_SUBSTRING;
+        strncpy(conf->grep_filter.u.const_string, conf->grep_expression, sizeof(conf->grep_filter.u.const_string));
+
+        conf->complete_filter.type = TRACE_MATCHER_AND;
+        conf->complete_filter.u.binary_operator_parameters.a = &conf->grep_filter;
+        conf->complete_filter.u.binary_operator_parameters.b = conf->severity_filter;
+        filter = &conf->complete_filter;
+    }
+    
+    TRACE_PARSER__set_filter(parser, filter);
+    
+}
+static void set_parser_params(struct trace_reader_conf *conf, trace_parser_t *parser)
+{
+
+    set_parser_filter(conf, parser);
         
     if (conf->no_color) {
         TRACE_PARSER__set_color(parser, 0);
