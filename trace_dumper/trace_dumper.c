@@ -356,8 +356,8 @@ static int get_process_time(unsigned short pid, unsigned long long *curtime)
         return -1;
     }
 
-    *curtime = stat_buf.st_mtim.tv_sec * 1000000000;
-    *curtime += stat_buf.st_mtim.tv_nsec;
+    *curtime = stat_buf.st_ctim.tv_sec * 1000000000;
+    *curtime += stat_buf.st_ctim.tv_nsec;
     return 0;
 }
 
