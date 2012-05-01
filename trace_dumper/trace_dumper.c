@@ -32,8 +32,6 @@
 #define MAX_FILTER_SIZE (10)
 #define METADATA_IOVEC_SIZE 2*(MAX_METADATA_SIZE/TRACE_RECORD_PAYLOAD_SIZE+1)
 
-#define TRACE_FILE_MAX_RECORDS_PER_FILE        0x1000000
-
 // The threshold stands at about 60 MBps
 #define OVERWRITE_THRESHOLD_PER_SECOND (600000)
 #define TRACE_SECOND (1000000000ULL)
@@ -92,7 +90,9 @@ CREATE_LIST_IMPLEMENTATION(BufferFilter, buffer_name_t);
 
 #define TRACE_METADATA_IOVEC_SIZE  (2*(MAX_METADATA_SIZE/TRACE_RECORD_PAYLOAD_SIZE+1))
 
-#define TRACE_FILE_MAX_RECORDS_PER_LOGDIR        (TRACE_FILE_MAX_RECORDS_PER_FILE) * 10
+#define TRACE_PREFERRED_FILE_MAX_RECORDS_PER_FILE        0x10000000
+#define PREFERRED_NUMBER_OF_TRACE_HISTORY_FILES (7)
+#define TRACE_PREFERRED_MAX_RECORDS_PER_LOGDIR        (TRACE_PREFERRED_FILE_MAX_RECORDS_PER_FILE) * PREFERRED_NUMBER_OF_TRACE_HISTORY_FILES;
 #define TRACE_FILE_MAX_RECORDS_PER_CHUNK       0x10000
 
 struct trace_record_file {
@@ -121,6 +121,10 @@ struct trace_dumper_configuration_s {
     unsigned long long next_possible_overwrite_relaxation;
     unsigned long long last_overwrite_test_time;
     unsigned long long last_overwrite_test_record_count;
+
+    const char *quota_specification;
+    long long max_records_per_logdir;
+    unsigned long long max_records_per_file;
 
 	struct trace_record_file record_file;
 	unsigned int last_flush_offset;
@@ -1088,8 +1092,7 @@ static int rotate_trace_file_if_necessary(struct trace_dumper_configuration_s *c
         return 0;
     }
     
-    if (conf->record_file.records_written < TRACE_FILE_MAX_RECORDS_PER_FILE) {
-        INFO("Records written:", conf->record_file.records_written, "Max records per file:", TRACE_FILE_MAX_RECORDS_PER_FILE);
+    if (conf->record_file.records_written < conf->max_records_per_file) {
         return 0;
     }
 
@@ -1103,8 +1106,7 @@ static int rotate_trace_file_if_necessary(struct trace_dumper_configuration_s *c
     }
 
     while (TRUE) {
-        INFO(total_records_in_logdir(conf), TRACE_FILE_MAX_RECORDS_PER_LOGDIR);
-        if (total_records_in_logdir(conf) > TRACE_FILE_MAX_RECORDS_PER_LOGDIR) {
+        if (total_records_in_logdir(conf) > conf->max_records_per_logdir) {
             rc = delete_oldest_trace_file(conf);
             if (0 != rc) {
                 return -1;
@@ -1220,16 +1222,17 @@ static int run_dumper(struct trace_dumper_configuration_s *conf)
 
 
 static const char usage[] = {
-    "Usage: %s [params]                                                                        \n" \
-    "                                                                                          \n" \
-    " -h, --help                            Display this help message                                     \n" \
-    " -f  --filter [buffer_name]            Filter out specified buffer name                              \n" \
-    " -o  --online                          Show data from buffers as it arrives (slows performance)      \n" \
-    " -w  --write-to-file[filename]         Write log records to file                                     \n" \
-    " -b  --logdir                          Specify the base log directory trace files are written to     \n" \
-    " -p  --pid [pid]                       Attach the specified process                                  \n" \
-    " -d  --debug-online                    Display DEBUG records in online mode                          \n" \
-    " -s  --syslog                          In online mode, write the entries to syslog instead of displaying them\n"
+    "Usage: %s [params]                                                                                            \n" \
+    "                                                                                                              \n" \
+    " -h, --help                            Display this help message                                              \n" \
+    " -f  --filter [buffer_name]            Filter out specified buffer name                                       \n" \
+    " -o  --online                          Show data from buffers as it arrives (slows performance)               \n" \
+    " -w  --write-to-file[filename]         Write log records to file                                              \n" \
+    " -b  --logdir                          Specify the base log directory trace files are written to              \n" \
+    " -p  --pid [pid]                       Attach the specified process                                           \n" \
+    " -d  --debug-online                    Display DEBUG records in online mode                                   \n" \
+    " -s  --syslog                          In online mode, write the entries to syslog instead of displaying them \n" \
+    " -q  --quota-size [bytes/percent]      Specify the total number of bytes that may be taken up by trace files  \n"
     "\n"};
 
 static const struct option longopts[] = {
@@ -1242,6 +1245,7 @@ static const struct option longopts[] = {
     { "syslog", 0, 0, 's'},
     { "pid", required_argument, 0, 'p'},
     { "write", optional_argument, 0, 'w'},
+    { "quota-size", required_argument, 0, 'q'},
 
 	{ 0, 0, 0, 0}
 };
@@ -1251,7 +1255,7 @@ static void print_usage(void)
     printf(usage, "trace_dumper");
 }
 
-static const char shortopts[] = "sw::p:hf:odb:n";
+static const char shortopts[] = "q:sw::p:hf:odb:n";
 
 #define DEFAULT_LOG_DIRECTORY "/mnt/logs"
 static void clear_mapped_records(struct trace_dumper_configuration_s *conf)
@@ -1266,7 +1270,7 @@ static void add_buffer_filter(struct trace_dumper_configuration_s *conf, char *b
     strncpy(filter, buffer_name, sizeof(filter));
     
     if (0 != BufferFilter__add_element(&conf->filtered_buffers, &filter)) {
-        ERROR("Can't add buffer", buffer_name,  "%s to filter list");
+        ERROR("Can't add buffer", buffer_name,  "to filter list");
     }
 }
 
@@ -1302,6 +1306,9 @@ static int parse_commandline(struct trace_dumper_configuration_s *conf, int argc
         case 's':
             conf->syslog = 1;
             break;
+        case 'q':
+            conf->quota_specification = optarg;
+            break;
         case '?':
             print_usage();
             return -1;
@@ -1321,7 +1328,52 @@ static void parser_event_handler(trace_parser_t __attribute__((unused)) *parser,
 {
 }
 
-static void init_dumper(struct trace_dumper_configuration_s *conf)
+static unsigned long long calculate_free_percentage(unsigned int percent, const char *logdir)
+{
+    if (percent > 100 || percent == 0) {
+        return 0;
+    }
+
+    long long free_bytes = free_bytes_in_fs(logdir);
+    return (free_bytes / 100) * percent;
+}
+
+static unsigned long long parse_quota_specification(const char *quota_specification, const char *logdir)
+{
+    unsigned long long max_bytes;
+    if (quota_specification[0] == '%') {
+        max_bytes = calculate_free_percentage(atoi(&quota_specification[1]), logdir);
+    } else {
+        max_bytes = atoi(quota_specification);
+    }
+
+    max_bytes = max_bytes / sizeof(struct trace_record);
+    return max_bytes;
+}
+
+
+static int set_quota(struct trace_dumper_configuration_s *conf)
+{
+    if (conf->quota_specification) {
+        conf->max_records_per_logdir = parse_quota_specification(conf->quota_specification, conf->logs_base);
+        if (conf->max_records_per_logdir == 0) {
+            return -1;
+        }
+        
+        if (conf->max_records_per_logdir < TRACE_PREFERRED_FILE_MAX_RECORDS_PER_FILE) {
+            conf->max_records_per_file = conf->max_records_per_logdir / PREFERRED_NUMBER_OF_TRACE_HISTORY_FILES;
+        } else {
+            conf->max_records_per_file = TRACE_PREFERRED_FILE_MAX_RECORDS_PER_FILE;
+        }
+    } else {
+        conf->max_records_per_file = TRACE_PREFERRED_FILE_MAX_RECORDS_PER_FILE;
+        conf->max_records_per_logdir = TRACE_PREFERRED_MAX_RECORDS_PER_LOGDIR;
+    }
+
+    return 0;
+}
+
+static int init_dumper(struct trace_dumper_configuration_s *conf)
 {
     clear_mapped_records(conf);
     
@@ -1354,6 +1406,12 @@ static void init_dumper(struct trace_dumper_configuration_s *conf)
 
     TRACE_PARSER__matcher_spec_from_severity_mask(severity_mask, conf->severity_filter, ARRAY_LENGTH(conf->severity_filter));
     TRACE_PARSER__set_filter(&conf->parser, conf->severity_filter);
+
+    if (set_quota(conf) != 0) {
+        return -1;
+    }
+
+    return 0;
 }
 
 void usr1_handler()
@@ -1402,7 +1460,12 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    init_dumper(&trace_dumper_configuration);
+    int rc = init_dumper(&trace_dumper_configuration);
+    if (0 != rc) {
+        print_usage();
+        return 1;
+    }
+    
     set_signal_handling();
     if (!conf->write_to_file && !conf->online) {
         fprintf(stderr, "Must specify either -w or -o\n");
