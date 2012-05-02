@@ -5,7 +5,7 @@ from datetime import datetime
 import _trace_parser_ctypes as _cparser_defs
 from _trace_parser_ctypes import TRACE_MATCHER_TRUE, TRACE_MATCHER_OR, TRACE_MATCHER_AND, TRACE_MATCHER_NOT, TRACE_MATCHER_PID, \
      TRACE_MATCHER_TID, TRACE_MATCHER_TIMERANGE, TRACE_MATCHER_LOGID, TRACE_MATCHER_SEVERITY, TRACE_MATCHER_FUNCTION, TRACE_MATCHER_LOG_PARAM_VALUE, \
-     TRACE_MATCHER_TYPE, TRACE_MATCHER_LOG_NAMED_PARAM_VALUE, TRACE_MATCHER_PROCESS_NAME, TRACE_MATCHER_NESTING
+     TRACE_MATCHER_TYPE, TRACE_MATCHER_LOG_NAMED_PARAM_VALUE, TRACE_MATCHER_PROCESS_NAME, TRACE_MATCHER_NESTING, TRACE_MATCHER_CONST_SUBSTRING
 
 from Bunch import Bunch
 from _ast import UnaryOp, BoolOp, And, Or, Not, Compare, Eq, Name, Num, Call, Str, Lt
@@ -326,8 +326,20 @@ class TraceFilter(object):
         else:
             return self._handle_func_filter(func_name, expression.args, expression.keywords)
 
+    def _handle_const_str(self, expression):
+        if isinstance(expression, Name):
+            const_str = expression.id
+        else:
+            const_str = expression.s
+
+        const_str_matcher = _cparser_defs.trace_record_matcher_spec_s()
+        const_str_matcher.type = TRACE_MATCHER_CONST_SUBSTRING
+        const_str_matcher.u.const_string = const_str
+        self._struct_references.append(const_str_matcher)
+        return const_str_matcher
+    
     def _parse_expression(self, expression):
-        if not isinstance(expression, (UnaryOp, BoolOp, Compare, Call)):
+        if not isinstance(expression, (UnaryOp, BoolOp, Compare, Call, Name, Str)):
             raise FilterParseError()
 
         if isinstance(expression, BoolOp):
@@ -338,6 +350,8 @@ class TraceFilter(object):
             return self._handle_unary_op(expression)
         elif isinstance(expression, Call):
             return self._handle_call(expression)
+        elif isinstance(expression, (Str, Name)):
+            return self._handle_const_str(expression)
 
         
     @classmethod 
