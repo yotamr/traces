@@ -697,12 +697,12 @@ Exit:
     return 0;
 }
 
-static long long total_records_in_logdir(struct trace_dumper_configuration_s *conf)
+static long long total_records_in_logdir(const char *logdir)
 {
     DIR *dir;
     struct dirent *ent;
     long long total_bytes = 0;
-    dir = opendir(conf->logs_base);
+    dir = opendir(logdir);
 
     if (dir == NULL) {
         return -1;
@@ -719,7 +719,7 @@ static long long total_records_in_logdir(struct trace_dumper_configuration_s *co
             continue;
         }
         char full_filename[0x100];
-        snprintf(full_filename, sizeof(full_filename), "%s/%s", conf->logs_base, ent->d_name);
+        snprintf(full_filename, sizeof(full_filename), "%s/%s", logdir, ent->d_name);
         long long file_size = get_file_size(full_filename);
         if (file_size < 0) {
             closedir(dir);
@@ -1088,25 +1088,13 @@ static void close_record_file(struct trace_dumper_configuration_s *conf)
 
 static int rotate_trace_file_if_necessary(struct trace_dumper_configuration_s *conf)
 {
+    int rc;
     if (!conf->write_to_file || conf->fixed_output_filename) {
         return 0;
     }
-    
-    if (conf->record_file.records_written < conf->max_records_per_file) {
-        return 0;
-    }
-
-    close_record_file(conf);
-    /* Reopen journal file */
-    
-    int rc = trace_open_file(conf, &conf->record_file, conf->logs_base);
-    if (0 != rc) {
-        ERROR("Unable to open trace file:", strerror(errno));
-        return -1;
-    }
 
     while (TRUE) {
-        if (total_records_in_logdir(conf) > conf->max_records_per_logdir) {
+        if (total_records_in_logdir(conf->logs_base) > conf->max_records_per_logdir) {
             rc = delete_oldest_trace_file(conf);
             if (0 != rc) {
                 return -1;
@@ -1115,7 +1103,19 @@ static int rotate_trace_file_if_necessary(struct trace_dumper_configuration_s *c
             break;
         }
     }
-    
+
+    if (conf->record_file.records_written < conf->max_records_per_file) {
+        return 0;
+    }
+
+    close_record_file(conf);
+    /* Reopen journal file */
+    rc = trace_open_file(conf, &conf->record_file, conf->logs_base);
+    if (0 != rc) {
+        ERROR("Unable to open trace file:", strerror(errno));
+        return -1;
+    }
+
     return 0;
 }
 
@@ -1162,15 +1162,16 @@ static int dump_records(struct trace_dumper_configuration_s *conf)
 {
     int rc;
     while (1) {
+        rc = rotate_trace_file_if_necessary(conf);
+        if (0 != rc) {
+            return -1;
+        }
+
         rc = open_trace_file_if_necessary(conf);
         if (rc != 0) {
             return -1;
         }
         
-        rc = rotate_trace_file_if_necessary(conf);
-        if (0 != rc) {
-            return -1;
-        }
         rc = trace_flush_buffers(conf);
         if (0 != rc) {
             return -1;
@@ -1333,9 +1334,15 @@ static unsigned long long calculate_free_percentage(unsigned int percent, const 
     if (percent > 100 || percent == 0) {
         return 0;
     }
+    
+    long long records_in_logdir = total_records_in_logdir(logdir);
+    if (-1 == records_in_logdir) {
+        records_in_logdir = 0;
+    }
 
-    long long free_bytes = free_bytes_in_fs(logdir);
+    long long free_bytes = free_bytes_in_fs(logdir) + (records_in_logdir * sizeof(struct trace_record));
     return (free_bytes / 100) * percent;
+
 }
 
 static unsigned long long parse_quota_specification(const char *quota_specification, const char *logdir)
