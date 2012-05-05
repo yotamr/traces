@@ -55,13 +55,16 @@ public:
 
     unsigned InlineTraceRepresentDiag;
     unsigned MultipleReprCallsDiag;
-    
+    unsigned EmptyLiteralStringDiag;
 TraceParam(llvm::raw_ostream &out, DiagnosticsEngine &_Diags, ASTContext &_ast, Rewriter *rewriter, std::set<const Type *> &_referencedTypes, std::set<TraceCall *> &global_traces): Out(out), Diags(_Diags), ast(_ast), Rewrite(rewriter), referencedTypes(_referencedTypes), globalTraces(global_traces), type_name("0"), trace_call(NULL) {
         clear();
         InlineTraceRepresentDiag = Diags.getCustomDiagID(DiagnosticsEngine::Error,
                                                          "inline __repr__ may cause obscure compilation errors");
         MultipleReprCallsDiag = Diags.getCustomDiagID(DiagnosticsEngine::Error,
                                                       "a __repr__ function may have only a single call to REPR() (showing last call to REPR)");
+        EmptyLiteralStringDiag = Diags.getCustomDiagID(DiagnosticsEngine::Warning,
+                                                      "Empty literal string in trace has no effect");
+
     }
 
     bool fromType(QualType type, bool fill_unknown);
@@ -203,7 +206,7 @@ TraceParam(llvm::raw_ostream &out, DiagnosticsEngine &_Diags, ASTContext &_ast, 
     }
 
 private:
-    std::string getLiteralString(const CastExpr *expr);
+    std::string getLiteralString(const Expr *expr);
     void referenceType(const Type *type);
     bool parseHexBufParam(const Expr *expr);
     bool parseStringParam(QualType type);
@@ -253,7 +256,7 @@ private:
 
     enum trace_severity functionNameToTraceSeverity(std::string function_name);
     bool parseTraceParams(CallExpr *S, std::vector<TraceParam> &args);
-    std::string getLiteralString(const CastExpr *expr);
+    std::string getLiteralString(const Expr *expr);
     void createTraceDeclaration(CallExpr *S, unsigned int severity, std::vector<TraceParam> &args);
     bool prepareSingleTraceParam(const Expr *trace_param, TraceParam &parsed_trace_param);
     void replaceExpr(const Expr *expr, std::string replacement);
