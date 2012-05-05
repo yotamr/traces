@@ -45,6 +45,7 @@ static const char *usage =
     " -t  --time                 Dump all records beginning at timestamp (in nsecs)             \n"
     " -o  --show-field-names     Show field names for all trace records                         \n"
     " -r  --relative-timestamp   Print timestamps relative to boot time                         \n"
+    " -i  --tail                 Display last records and wait for more data                    \n"
     " -g  --grep [expression]    Display records whose constant string matches the expression   \n"
     " -s  --print-stats          Print per-log occurrence count                                 \n"
     " -m  --dump-metadata        Dump metadata                                                  \n"
@@ -61,6 +62,7 @@ static const struct option longopts[] = {
     { "show-field-name", 0, 0, 'o'},
     { "relative-timestamp", required_argument, 0, 't'},
     { "grep", required_argument, 0, 'g'},
+    { "tail", 0, 0, 'i'},
 	{ 0, 0, 0, 0}
 };
 
@@ -69,7 +71,7 @@ static void print_usage(void)
     printf(usage, "simple_trace_reader");
 }
 
-static const char shortopts[] = "g:moft:hdnesr";
+static const char shortopts[] = "ig:moft:hdnesr";
 
 static int parse_command_line(struct trace_reader_conf *conf, int argc, char **argv)
 {
@@ -98,6 +100,9 @@ static int parse_command_line(struct trace_reader_conf *conf, int argc, char **a
             break;
         case 'r':
             conf->relative_ts = 1;
+            break;
+        case 'i':
+            conf->tail = 1;
             break;
         case 't':
             conf->from_time = strtoll(optarg, NULL, 10);
@@ -198,14 +203,21 @@ static int dump_all_files(struct trace_reader_conf *conf)
     
     for (i = 0; i < FilenameList__element_count(&conf->files_to_process); i++) {
         FilenameList__get_element(&conf->files_to_process, i, &filename);
-
-        int rc = TRACE_PARSER__from_file(&parser, filename, read_event_handler, NULL);
+        int rc = TRACE_PARSER__from_file(&parser, conf->tail, filename, read_event_handler, NULL);
         if (0 != rc) {
             fprintf(stderr, "Error opening file %s\n", filename);
             return -1;
         }
-
         set_parser_params(conf, &parser);
+
+
+        if (conf->tail) {
+            TRACE_PARSER__seek_to_time(&parser, LLONG_MAX, &error_occurred);
+            if (error_occurred) {
+                fprintf(stderr, "Error seeking to end of file %llu\n", conf->from_time);
+            }
+        }
+                
         if (conf->from_time) {
             TRACE_PARSER__seek_to_time(&parser, conf->from_time, &error_occurred);
             if (error_occurred) {
@@ -230,7 +242,7 @@ static int dump_statistics_for_all_files(struct trace_reader_conf *conf)
     for (i = 0; i < FilenameList__element_count(&conf->files_to_process); i++) {
         FilenameList__get_element(&conf->files_to_process, i, &filename);
 
-        int rc = TRACE_PARSER__from_file(&parser, filename, read_event_handler, NULL);
+        int rc = TRACE_PARSER__from_file(&parser, FALSE, filename, read_event_handler, NULL);
         set_parser_params(conf, &parser);
 
         if (0 != rc) {
@@ -255,7 +267,7 @@ static int dump_metadata_for_files(struct trace_reader_conf *conf)
     for (i = 0; i < FilenameList__element_count(&conf->files_to_process); i++) {
         FilenameList__get_element(&conf->files_to_process, i, &filename);
 
-        int rc = TRACE_PARSER__from_file(&parser, filename, read_event_handler, NULL);
+        int rc = TRACE_PARSER__from_file(&parser, FALSE, filename, read_event_handler, NULL);
         set_parser_params(conf, &parser);
 
         if (0 != rc) {

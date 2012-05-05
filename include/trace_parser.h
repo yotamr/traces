@@ -166,6 +166,9 @@ typedef struct trace_parser {
     int always_hex;
     int indent;
     int relative_ts;
+    bool_t wait_for_input;
+    int inotify_fd;
+    int inotify_descriptor;
     int show_field_names;
     bool_t cancel_ongoing_operation;
     struct trace_record_matcher_spec_s record_filter;
@@ -174,13 +177,14 @@ typedef struct trace_parser {
 } trace_parser_t;
 
 #define SEVERITY_FILTER_LEN (21)
-int TRACE_PARSER__from_file(trace_parser_t *parser, const char *filename, trace_parser_event_handler_t event_handler, void *arg);
+int TRACE_PARSER__from_file(trace_parser_t *parser, bool_t wait_for_input, const char *filename, trace_parser_event_handler_t event_handler, void *arg);
 int TRACE_PARSER__process_previous_record_from_file(trace_parser_t *parser);
 int TRACE_PARSER__process_next_record_from_file(trace_parser_t *parser);
 void TRACE_PARSER__from_external_stream(trace_parser_t *parser, trace_parser_event_handler_t event_handler, void *arg);
 void TRACE_PARSER__fini(trace_parser_t *parser);
 void TRACE_PARSER__set_color(trace_parser_t *parser, int has_color);
 void TRACE_PARSER__set_indent(trace_parser_t *parser, int indent);
+void TRACE_PARSER__set_wait_for_input(trace_parser_t *parser, int wait_for_input);
 void TRACE_PARSER__set_verbose(trace_parser_t *parser, int verbose);
 void TRACE_PARSER__set_show_field_names(trace_parser_t *parser, int show_field_names);
 void TRACE_PARSER__set_relative_ts(trace_parser_t *parser, int relative_ts);

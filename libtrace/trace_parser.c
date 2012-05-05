@@ -16,6 +16,7 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 ***/
 
 #include <sys/types.h>
+#include <sys/inotify.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -69,21 +70,60 @@ CREATE_LIST_IMPLEMENTATION(RecordsAccumulatorList, struct trace_record_accumulat
 #define F_MAGENTA_BOLD(x) parser->color ? _F_MAGENTA_BOLD(x) : x
 #define ANSI_DEFAULTS(x)  parser->color ? _ANSI_DEFAULTS(x) : x
 
+static int wait_for_data(trace_parser_t *parser)
+{
+    fd_set read_fdset;
+    struct inotify_event event;
+    while (TRUE) {
+        FD_ZERO(&read_fdset);
+        FD_SET(parser->inotify_fd, &read_fdset);
+
+        int rc = select(parser->inotify_fd + 1, &read_fdset, NULL, NULL, NULL);
+        if (-1 == rc) {
+            return -1;
+        }
+
+        rc = read(parser->inotify_fd, &event, sizeof(event));
+        if (rc != sizeof(event)) {
+            return -1;
+        }
+
+        if (event.mask & IN_MODIFY) {
+            return 0;
+        }
+    }
+}
+
+
+
 static int read_next_record(trace_parser_t *parser, struct trace_record *record)
 {
     int rc;
-    rc = cached_file__read(&parser->file_info.cached_file, record, sizeof(*record));
-    if (rc == 0) {
-        parser->buffer_dump_context.file_offset++;
-        record->rec_type = TRACE_REC_TYPE_END_OF_FILE;
-        record->ts = 0;
-        return 0;
+
+    while (TRUE) {
+        rc = cached_file__read(&parser->file_info.cached_file, record, sizeof(*record));
+        if (rc == 0) {
+            if (parser->wait_for_input) {
+                rc = wait_for_data(parser);
+                if (0 != rc) {
+                    return -1;
+                }
+
+                continue;
+            }
+
+            parser->buffer_dump_context.file_offset++;
+            record->rec_type = TRACE_REC_TYPE_END_OF_FILE;
+            record->ts = 0;
+            return 0;
+        }
+
+        break;
+        if (rc != sizeof(*record)) {
+            return -1;
+        }
     }
     
-    if (rc != sizeof(*record)) {
-        return -1;
-    }
-
     return 0;
 }
 
@@ -1700,16 +1740,42 @@ long long trace_end_offset(trace_parser_t *parser)
     return end_offset;
 }
 
-int TRACE_PARSER__from_file(trace_parser_t *parser, const char *filename, trace_parser_event_handler_t event_handler, void *arg)
+
+static int init_inotify(trace_parser_t *parser, const char *filename)
 {
     int rc;
+    rc = inotify_init();
+    if (-1 == rc) {
+        return -1;
+    }
 
+    parser->inotify_fd = rc;
+    rc = inotify_add_watch(parser->inotify_fd, filename, IN_MODIFY);
+    if (-1 == rc) {
+        return -1;
+    }
+
+    parser->inotify_descriptor = rc;
+    return 0;
+}
+
+int TRACE_PARSER__from_file(trace_parser_t *parser, bool_t wait_for_input, const char *filename, trace_parser_event_handler_t event_handler, void *arg)
+{
+    int rc;
     trace_parser_init(parser, event_handler, arg, TRACE_INPUT_STREAM_TYPE_SEEKABLE_FILE);
+    printf("%d\n", wait_for_input);
+    if (wait_for_input) {
+        parser->wait_for_input = TRUE;
+        if (0 != init_inotify(parser, filename)) {
+            return -1;
+        }
+    }
+
     rc = cached_file__open(&parser->file_info.cached_file, filename, O_RDONLY);
     if (0 != rc) {
         return -1;
     }
-    
+
     struct trace_record file_header;
 
     rc = read_file_header(parser, &file_header);

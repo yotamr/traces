@@ -389,7 +389,7 @@ class TraceParser(object):
         self._event_handler = event_handler
 
         if filename:
-            _traces_so.TRACE_PARSER__from_file(byref(self._parser_handle), filename, self._handler, byref(c_int()))
+            _traces_so.TRACE_PARSER__from_file(byref(self._parser_handle), False, filename, self._handler, byref(c_int()))
             self.end_offset = self._parser_handle.file_info.end_offset
         else:
             _traces_so.TRACE_PARSER__from_external_stream(byref(self._parser_handle), self._handler, byref(c_int()))
