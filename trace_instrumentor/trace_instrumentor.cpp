@@ -484,12 +484,14 @@ void TraceCall::expandWithoutDeclaration()
 
 
 class FunctionCallerFinder : public StmtVisitor<FunctionCallerFinder> {
-    CallExpr* CE;
+    unsigned int call_count;
+    CallExpr *CE;
     std::string function_name;
 public:
     void VisitCallExpr(CallExpr* _CE) {
         const FunctionDecl *callee = _CE->getDirectCallee();
         if (function_name.compare(callee->getNameAsString()) == 0) {
+            call_count++;
             CE = _CE;
         }
     }
@@ -503,10 +505,12 @@ public:
         }
     }
 
-    CallExpr *functionHasFunctionCall(Stmt *body, std::string _function_name) {
+    CallExpr *functionHasFunctionCall(Stmt *body, std::string _function_name, int *_call_count) {
         function_name = _function_name;
         CE = NULL;
+        call_count = 0;
         Visit(body);
+        *_call_count = call_count;
         return CE;
     }
 };
@@ -531,7 +535,11 @@ bool TraceParam::parseClassTypeParam(const Expr *expr)
     for (CXXRecordDecl::method_iterator method = RD->method_begin();
          method != RD->method_end();
          ++method) {
-        if (method->getNameAsString().compare("_trace_represent") == 0) {
+        if (method->getNameAsString().compare("_trace_represent") == 0 && method->hasBody()) {
+            if (method->hasInlineBody()) {
+                Diags.Report(ast.getFullLoc(method->getLocStart()), InlineTraceRepresentDiag) << method->getSourceRange();
+            }
+            
             MD = *method;
             break;
         }
@@ -542,12 +550,17 @@ bool TraceParam::parseClassTypeParam(const Expr *expr)
     }
 
     FunctionCallerFinder finder;
-    CallExpr *call_expr = finder.functionHasFunctionCall(MD->getBody(), "REPR");
+    int call_count;
+    CallExpr *call_expr = finder.functionHasFunctionCall(MD->getBody(), "REPR", &call_count);
     if (call_expr == NULL) {
         return false;
     }
 
-    TraceCall *_trace_call = new TraceCall(Out, ast, Rewrite, referencedTypes, globalTraces);
+    if (call_count > 1) {
+        Diags.Report(ast.getFullLoc(call_expr->getLocStart()), MultipleReprCallsDiag) << call_expr->getSourceRange();
+    }
+    
+    TraceCall *_trace_call = new TraceCall(Out, Diags, ast, Rewrite, referencedTypes, globalTraces);
     if (!_trace_call->fromCallExpr(call_expr)) {
         return false;
     }
@@ -677,9 +690,7 @@ bool TraceParam::parseStringParam(const Expr *expr)
 
 void TraceCall::unknownTraceParam(const Expr *trace_param)
 {
-
-    printf("Unknown trace param %s\n", getLiteralExpr(ast, Rewrite, trace_param).c_str());
-    exit(1);
+    Diags.Report(ast.getFullLoc(trace_param->getLocStart()), UnknownTraceParamDiag) << trace_param->getSourceRange();
 }
 
 static std::string getCallExprFunctionName(const CallExpr *CE)
@@ -753,7 +764,7 @@ bool TraceCall::parseTraceParams(CallExpr *S, std::vector<TraceParam> &args)
 {
     Expr **call_args = S->getArgs();
     for (unsigned int i = 0; i < S->getNumArgs(); i++) {
-        TraceParam trace_param(Out, ast, Rewrite, referencedTypes, globalTraces);
+        TraceParam trace_param(Out, Diags, ast, Rewrite, referencedTypes, globalTraces);
         trace_param.clear();
         if (trace_param.fromExpr(call_args[i], true)) {
             if (trace_param.const_str.length() == 0 && valid_param_name(trace_param.expression)) {
@@ -794,12 +805,13 @@ bool TraceCall::fromCallExpr(CallExpr *expr) {
 class DeclIterator : public DeclVisitor<DeclIterator> {
 public:
     llvm::raw_ostream &Out;
+    DiagnosticsEngine &Diags;
     ASTContext &ast;
     Rewriter *Rewrite;
     SourceManager *SM;
     LangOptions langOpts;
 
-    DeclIterator(llvm::raw_ostream& xOut, ASTContext &xAst, Rewriter *rewriter, SourceManager *sm, const LangOptions &_langOpts, std::set<const Type *> &referenced_types, std::set<TraceCall *> &global_traces) : Out(xOut), ast(xAst), Rewrite(rewriter), SM(sm), langOpts(_langOpts), referencedTypes(referenced_types), globalTraces(global_traces)  {};
+    DeclIterator(llvm::raw_ostream& xOut, DiagnosticsEngine &_Diags, ASTContext &xAst, Rewriter *rewriter, SourceManager *sm, const LangOptions &_langOpts, std::set<const Type *> &referenced_types, std::set<TraceCall *> &global_traces) : Out(xOut), Diags(_Diags), ast(xAst), Rewrite(rewriter), SM(sm), langOpts(_langOpts), referencedTypes(referenced_types), globalTraces(global_traces)  {};
     void VisitDeclContext(DeclContext *DC, bool Indent = true);
     void VisitTranslationUnitDecl(TranslationUnitDecl *D);
     void VisitTypedefDecl(TypedefDecl *D);
@@ -832,13 +844,14 @@ private:
 class StmtIterator : public StmtVisitor<StmtIterator> {
 public:
     llvm::raw_ostream &Out;
+    DiagnosticsEngine &Diags;
     ASTContext &ast;
     Rewriter *Rewrite;
     SourceManager *SM;
     LangOptions langOpts;
     Decl *D;
 
-    StmtIterator(llvm::raw_ostream& xOut, ASTContext &xAst, Rewriter *rewriter, SourceManager *sm, const LangOptions &_langOpts, Decl *_D, std::set<const Type *>&referenced_types, std::set<TraceCall *> &global_traces) : Out(xOut), ast(xAst), Rewrite(rewriter), SM(sm), langOpts(_langOpts), D(_D), referencedTypes(referenced_types), globalTraces(global_traces)  {};
+    StmtIterator(llvm::raw_ostream& xOut, DiagnosticsEngine &_Diags, ASTContext &xAst, Rewriter *rewriter, SourceManager *sm, const LangOptions &_langOpts, Decl *_D, std::set<const Type *>&referenced_types, std::set<TraceCall *> &global_traces) : Out(xOut), Diags(_Diags), ast(xAst), Rewrite(rewriter), SM(sm), langOpts(_langOpts), D(_D), referencedTypes(referenced_types), globalTraces(global_traces)  {};
 
 #define STMT(Node, Base) void Visit##Node(Node *S);
 #include <clang/AST/StmtNodes.inc>
@@ -906,7 +919,7 @@ void DeclIterator::VisitFunctionDecl(FunctionDecl *D) {
     if (NULL != strstr(D->getQualifiedNameAsString().c_str(), "std::")) {
         return;
     }
-
+    
     if (isa<CXXMethodDecl>(D)) {
         CXXMethodDecl *method_decl = dyn_cast<CXXMethodDecl>(D);
         CXXRecordDecl *class_decl = method_decl->getParent();
@@ -918,17 +931,23 @@ void DeclIterator::VisitFunctionDecl(FunctionDecl *D) {
     if (!(D->hasBody()  &&  D->isThisDeclarationADefinition())) {
         return;
     }
-    StmtIterator stmtiterator(Out, ast, Rewrite, SM, langOpts, D, referencedTypes, globalTraces);
+    StmtIterator stmtiterator(Out, Diags, ast, Rewrite, SM, langOpts, D, referencedTypes, globalTraces);
 
     bool has_returns = false;
     Stmt *stmt = D->getBody();
     SourceLocation function_start = getFunctionBodyStart(stmt);
-    TraceParam trace_param(Out, ast, Rewrite, referencedTypes, globalTraces);
-    TraceParam function_name_param(Out, ast, Rewrite, referencedTypes, globalTraces);
+    TraceParam trace_param(Out, Diags, ast, Rewrite, referencedTypes, globalTraces);
+    TraceParam function_name_param(Out, Diags, ast, Rewrite, referencedTypes, globalTraces);
     function_name_param.setConstStr(D->getQualifiedNameAsString());
-    TraceCall trace_call(Out, ast, Rewrite, referencedTypes, globalTraces);
+    TraceCall trace_call(Out, Diags, ast, Rewrite, referencedTypes, globalTraces);
     trace_call.addTraceParam(function_name_param);
     enum trace_severity severity = TRACE_SEV_FUNC_TRACE;
+
+
+    if (NULL != strstr(D->getQualifiedNameAsString().c_str(), "_trace_represent")) {
+        goto exit;
+    }
+    
     trace_call.setSeverity(severity);
     trace_call.setKind("TRACE_LOG_DESCRIPTOR_KIND_FUNC_ENTRY");
     if (D->hasAttr<NoInstrumentFunctionAttr>() || D->isInlined() || D->isInlineSpecified()) {
@@ -938,12 +957,12 @@ void DeclIterator::VisitFunctionDecl(FunctionDecl *D) {
     hasReturnStmts(stmt, has_returns);
     if (!has_returns || D->getResultType()->isVoidType()) {
         SourceLocation endLocation = stmt->getLocEnd();
-        TraceParam trace_param(Out, ast, Rewrite, referencedTypes, globalTraces);
-        TraceParam function_name_param(Out, ast, Rewrite, referencedTypes, globalTraces);
+        TraceParam trace_param(Out, Diags, ast, Rewrite, referencedTypes, globalTraces);
+        TraceParam function_name_param(Out, Diags, ast, Rewrite, referencedTypes, globalTraces);
 
         function_name_param.setConstStr(D->getQualifiedNameAsString());
     
-        TraceCall trace_call(Out, ast, Rewrite, referencedTypes, globalTraces);
+        TraceCall trace_call(Out, Diags, ast, Rewrite, referencedTypes, globalTraces);
         enum trace_severity severity = TRACE_SEV_FUNC_TRACE;
         trace_call.setSeverity(severity);
         trace_call.setKind("TRACE_LOG_DESCRIPTOR_KIND_FUNC_LEAVE");
@@ -1279,6 +1298,10 @@ void StmtIterator::VisitReturnStmt(ReturnStmt *S)
     if (NULL != strstr(FD->getQualifiedNameAsString().c_str(), "std::")) {
         return;
     }
+    
+    if (NULL != strstr(FD->getQualifiedNameAsString().c_str(), "_trace_represent")) {
+        return;
+    }
 
     if (isa<CXXMethodDecl>(D)) {
         CXXMethodDecl *method_decl = dyn_cast<CXXMethodDecl>(D);
@@ -1295,11 +1318,11 @@ void StmtIterator::VisitReturnStmt(ReturnStmt *S)
     SourceLocation startLoc = S->getLocStart();
     SourceLocation onePastSemiLoc = getReturnStmtEnd(ast, Rewrite, S);
     
-    TraceParam trace_param(Out, ast, Rewrite, referencedTypes, globalTraces);
-    TraceParam  function_name_param(Out, ast, Rewrite, referencedTypes, globalTraces);
+    TraceParam trace_param(Out, Diags, ast, Rewrite, referencedTypes, globalTraces);
+    TraceParam function_name_param(Out, Diags, ast, Rewrite, referencedTypes, globalTraces);
     function_name_param.setConstStr(FD->getQualifiedNameAsString());
     
-    TraceCall trace_call(Out, ast, Rewrite, referencedTypes, globalTraces);
+    TraceCall trace_call(Out, Diags, ast, Rewrite, referencedTypes, globalTraces);
     enum trace_severity severity = TRACE_SEV_FUNC_TRACE;
     trace_call.setKind("TRACE_LOG_DESCRIPTOR_KIND_FUNC_LEAVE");
     trace_call.setSeverity(severity);
@@ -1502,7 +1525,7 @@ void StmtIterator::VisitArraySubscriptExpr(ArraySubscriptExpr *S)
 void StmtIterator::VisitCallExpr(CallExpr *S)
 {
     
-    TraceCall trace_call(Out, ast, Rewrite, referencedTypes, globalTraces);
+    TraceCall trace_call(Out, Diags, ast, Rewrite, referencedTypes, globalTraces);
     bool successfully_parsed = trace_call.fromCallExpr(S);
     if (successfully_parsed) {
         if (getCallExprFunctionName(S).compare("REPR") == 0) {
@@ -2085,6 +2108,7 @@ void StmtIterator::VisitTemplateArgument(const TemplateArgument &Arg)
 class PreCompilationLogsConsumer : public ASTConsumer {
 public:
     llvm::raw_ostream& Out;
+    DiagnosticsEngine &Diags;
     raw_ostream *OutFile;
     FileID MainFileID;
     SourceManager *SM;
@@ -2092,7 +2116,6 @@ public:
     std::stringstream type_definition;
     std::stringstream global_traces;
     CompilerInstance *compilerInstance;
-
     
     PreCompilationLogsConsumer(StringRef inFile, raw_ostream *out, CompilerInstance &CI);
 
@@ -2194,7 +2217,7 @@ public:
         Rewrite.setSourceMgr(C.getSourceManager(), C.getLangOptions());
         SM = &C.getSourceManager();
         MainFileID = SM->getMainFileID();
-        DeclIterator decliterator(Out, C, &Rewrite, SM, C.getLangOptions(), referencedTypes, globalTraces);
+        DeclIterator decliterator(Out, Diags, C, &Rewrite, SM, C.getLangOptions(), referencedTypes, globalTraces);
         decliterator.Visit(C.getTranslationUnitDecl());
         buildReferencedTypes();
         buildGlobalTraces();
@@ -2202,8 +2225,6 @@ public:
             Rewrite.getRewriteBufferFor(MainFileID)) {
             *OutFile << std::string(RewriteBuf->begin(), RewriteBuf->end());
             *OutFile << type_definition.str();
-            //*OutFile << global_traces.str();
-
         } else {
             StringRef buffer = SM->getBufferData(MainFileID).data();
             *OutFile << std::string(buffer);
@@ -2217,7 +2238,7 @@ private:
 };
 
 PreCompilationLogsConsumer::PreCompilationLogsConsumer(StringRef inFile, raw_ostream *out, CompilerInstance &CI)
-    : Out(llvm::errs()), OutFile(out), InFileName(inFile), compilerInstance(&CI)
+    : Out(llvm::errs()), Diags(CI.getDiagnostics()), OutFile(out), InFileName(inFile), compilerInstance(&CI)
 {
 }
 

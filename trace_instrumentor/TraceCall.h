@@ -47,12 +47,23 @@ class TraceCall;
 class TraceParam {
 public:
     llvm::raw_ostream &Out;
+    DiagnosticsEngine &Diags;
     ASTContext &ast;
     Rewriter *Rewrite;
     std::set<const Type *> &referencedTypes;
     std::set<TraceCall *> &globalTraces;
+
+    unsigned InlineTraceRepresentDiag;
+    unsigned MultipleReprCallsDiag;
     
-TraceParam(llvm::raw_ostream &out, ASTContext &_ast, Rewriter *rewriter, std::set<const Type *> &_referencedTypes, std::set<TraceCall *> &global_traces): Out(out), ast(_ast), Rewrite(rewriter), referencedTypes(_referencedTypes), globalTraces(global_traces), type_name("0"), trace_call(NULL) { clear(); };
+TraceParam(llvm::raw_ostream &out, DiagnosticsEngine &_Diags, ASTContext &_ast, Rewriter *rewriter, std::set<const Type *> &_referencedTypes, std::set<TraceCall *> &global_traces): Out(out), Diags(_Diags), ast(_ast), Rewrite(rewriter), referencedTypes(_referencedTypes), globalTraces(global_traces), type_name("0"), trace_call(NULL) {
+        clear();
+        InlineTraceRepresentDiag = Diags.getCustomDiagID(DiagnosticsEngine::Error,
+                                                         "inline __repr__ may cause obscure compilation errors");
+        MultipleReprCallsDiag = Diags.getCustomDiagID(DiagnosticsEngine::Error,
+                                                      "a __repr__ function may have only a single call to REPR() (showing last call to REPR)");
+    }
+
     bool fromType(QualType type, bool fill_unknown);
     bool fromExpr(const Expr *E, bool interpret_char_ptr_as_string);
     unsigned long flags;
@@ -78,6 +89,7 @@ TraceParam(llvm::raw_ostream &out, ASTContext &_ast, Rewriter *rewriter, std::se
         size_expression  = source.size_expression;
         size             = source.size;
         trace_call       = source.trace_call;
+        Diags            = source.Diags;
         
         type_name = type_name;
         is_pointer = is_pointer;
@@ -207,7 +219,10 @@ private:
 
 class TraceCall {
 public:
-TraceCall(llvm::raw_ostream &out, ASTContext &_ast, Rewriter *rewriter, std::set<const Type *> &referenced_types, std::set<TraceCall *> &global_traces) : method_generated(false), trace_call_name("tracelog"), ast(_ast), Out(out), Rewrite(rewriter), referencedTypes(referenced_types), globalTraces(global_traces){ };
+TraceCall(llvm::raw_ostream &out, DiagnosticsEngine &_Diags, ASTContext &_ast, Rewriter *rewriter, std::set<const Type *> &referenced_types, std::set<TraceCall *> &global_traces) : method_generated(false), trace_call_name("tracelog"), ast(_ast), Diags(_Diags), Out(out), Rewrite(rewriter), referencedTypes(referenced_types), globalTraces(global_traces){
+        UnknownTraceParamDiag = Diags.getCustomDiagID(DiagnosticsEngine::Error,
+                                                      "Unsupported trace parameter type");
+    }
 
     bool fromCallExpr(CallExpr *exp);
     void addTraceParam(TraceParam &param) { args.push_back(param); }
@@ -223,12 +238,16 @@ TraceCall(llvm::raw_ostream &out, ASTContext &_ast, Rewriter *rewriter, std::set
     
 private:
     ASTContext &ast;
+    DiagnosticsEngine &Diags;
     llvm::raw_ostream &Out;
     const CallExpr *call_expr;
     std::vector<TraceParam> args;
     enum trace_severity severity;
     const char *kind;
     Rewriter *Rewrite;
+
+    unsigned UnknownTraceParamDiag;
+    
     std::set<const Type *> &referencedTypes;
     std::set<TraceCall *> &globalTraces;
 

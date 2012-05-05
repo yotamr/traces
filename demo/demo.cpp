@@ -28,10 +28,12 @@ class some_class {
 public:
     some_class() {something = 910; };
     int something;
-    void __repr__ {
-        REPR("some_class(", something, ")");
-    }
+    void __repr__;
 };
+
+void some_class::__repr__ {
+    REPR("some_class(", something, ")");
+}
 
 int main(void) {
     some_class the_class_ptr;
