@@ -433,7 +433,7 @@ std::string TraceCall::getTraceWriteExpression()
 
             start_record << "{ " << param.type_name << " _s_ = (" << param.expression << ");";
             start_record << "unsigned int rlen = _s_ ? __builtin_strlen(" << castTo(ast.getLangOptions(), "_s_", "const char *") << "): 0;";
-            start_record << "while (rlen) { ";
+            start_record << "do { ";
             start_record << "unsigned int copy_size = " << genMIN(rlen_str, buf_left_str) << ";";
             start_record << "__builtin_memcpy(&((*typed_buf)[1]), _s_, copy_size);";
             start_record << "(*typed_buf)[0] = copy_size;";
@@ -442,9 +442,9 @@ std::string TraceCall::getTraceWriteExpression()
             start_record << "rlen -= copy_size;";
             start_record << "(*buf_left) -= copy_size + 1;";
             start_record << "_s_ += copy_size;";
-            start_record << "if (rlen) {";
+            start_record << "if (rlen || buf_left == 0) {";
             start_record << commitAndAllocateRecord(severity);
-            start_record << "}}}";
+            start_record << "}} while (rlen); }";
         }
 
         if (param.trace_call) {
