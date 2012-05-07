@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <errno.h>
 #include <limits.h>
 #include <getopt.h>
@@ -42,7 +43,7 @@ static const char *usage =
     " -n  --no-color             Disable colored output                                         \n"
     " -e  --dump-debug           Dump all debug entries                                         \n"
     " -f  --dump-functions       Dump all debug entries and fucntion calls                      \n"
-    " -t  --time                 Dump all records beginning at timestamp (in nsecs)             \n"
+    " -t  --time                 Dump all records beginning at timestamp, formatted according to trace output timestamps      \n"
     " -o  --show-field-names     Show field names for all trace records                         \n"
     " -r  --relative-timestamp   Print timestamps relative to boot time                         \n"
     " -i  --tail                 Display last records and wait for more data                    \n"
@@ -72,6 +73,46 @@ static void print_usage(void)
 }
 
 static const char shortopts[] = "ig:moft:hdnesr";
+
+#define SECOND (1000000000LL)
+#define MINUTE (SECOND * 60LL)
+#define HOUR (MINUTE * 60LL)
+#define DAY (HOUR * 24LL)
+#define YEAR (DAY * 365LL)
+
+static long long timespec_to_nanosec(struct tm *time_spec)
+{
+    return (mktime(time_spec) * SECOND);
+}
+
+static long long maybe_process_nanosec(const char *str)
+{
+    if (*str == ':') {
+        long long nano_seconds = strtoll(&str[1], NULL, 10);
+        if (nano_seconds == LLONG_MAX || nano_seconds == LLONG_MIN) {
+            return 0;
+        } else {
+            return nano_seconds;
+        }
+    } else {
+        return 0;
+    }
+}
+
+char *strptime(const char *s, const char *format, struct tm *tm);
+static unsigned long long format_cmdline_time(const char *time_str)
+{
+    const char *format = "%a %b %d %T %Y";
+    struct tm formatted_time;
+    char *result = strptime(time_str, format, &formatted_time);
+    if (NULL == result) {
+        return LLONG_MIN;
+    } else {
+        long long from_time = timespec_to_nanosec(&formatted_time);
+        from_time += maybe_process_nanosec(result);
+        return from_time;
+    }
+}
 
 static int parse_command_line(struct trace_reader_conf *conf, int argc, char **argv)
 {
@@ -105,7 +146,7 @@ static int parse_command_line(struct trace_reader_conf *conf, int argc, char **a
             conf->tail = 1;
             break;
         case 't':
-            conf->from_time = strtoll(optarg, NULL, 10);
+            conf->from_time = format_cmdline_time(optarg);
             if (conf->from_time == LLONG_MIN || conf->from_time == LLONG_MAX) {
                 fprintf(stderr, "Invalid time specification\n");
                 print_usage();

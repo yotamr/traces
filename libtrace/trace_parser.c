@@ -1763,7 +1763,6 @@ int TRACE_PARSER__from_file(trace_parser_t *parser, bool_t wait_for_input, const
 {
     int rc;
     trace_parser_init(parser, event_handler, arg, TRACE_INPUT_STREAM_TYPE_SEEKABLE_FILE);
-    printf("%d\n", wait_for_input);
     if (wait_for_input) {
         parser->wait_for_input = TRUE;
         if (0 != init_inotify(parser, filename)) {
