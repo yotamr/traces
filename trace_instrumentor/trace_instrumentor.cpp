@@ -442,7 +442,7 @@ std::string TraceCall::getTraceWriteExpression()
             start_record << "rlen -= copy_size;";
             start_record << "(*buf_left) -= copy_size + 1;";
             start_record << "_s_ += copy_size;";
-            start_record << "if (rlen || buf_left == 0) {";
+            start_record << "if (rlen || ((*buf_left) == 0)) {";
             start_record << commitAndAllocateRecord(severity);
             start_record << "}} while (rlen); }";
         }
