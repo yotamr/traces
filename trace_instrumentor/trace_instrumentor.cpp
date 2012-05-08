@@ -58,12 +58,6 @@ static const Type *get_expr_type(const Expr *expr)
      }
  }
 
- static int log_count = 0;
- static int get_next_log_id(void) {
-     log_count++;
-     return log_count - 1;
- }
-    
  std::string & replaceAll(
      std::string &result, 
      const std::string& replaceWhat, 
@@ -269,6 +263,18 @@ bool TraceParam::parseEnumTypeParam(const Expr *expr) {
     return true;
 }
 
+static bool traceCallReferenced(std::set<TraceCall *> &traces, std::string trace_name)
+{
+    for (std::set<TraceCall *>::iterator i = traces.begin(); i != traces.end(); i++) {
+        TraceCall *trace_call = *i;
+        if (trace_call->trace_call_name.compare(trace_name) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 std::string TraceCall::getTraceDeclaration()
 {
     std::stringstream params;
@@ -448,20 +454,20 @@ std::string TraceCall::getTraceWriteExpression()
         }
 
         if (param.trace_call) {
-            if (param.method_generated) {
-
-                // TODO: Just do a single copy
-                start_record << param.trace_call->getTraceDeclaration();
-                std::string logid = "(&" + param.trace_call->trace_call_name + "- &__static_log_information_start)";
-                std::string _type_name = "int";
-                start_record << writeSimpleValue(logid, _type_name, false, false);
-
-                start_record << param.expression;
-                start_record << "(buf_left, _record, __record_ptr, typed_buf);";
+            if (!traceCallReferenced(globalTraces, param.trace_call->trace_call_name)) {
+                globalTraces.insert(param.trace_call);
             }
-        }
-    }
 
+            // TODO: Just do a single copy
+            std::string logid = "(&" + param.trace_call->trace_call_name + "- &__static_log_information_start)";
+            std::string _type_name = "int";
+            start_record << writeSimpleValue(logid, _type_name, false, false);
+            
+            start_record << param.expression;
+            start_record << "(buf_left, _record, __record_ptr, typed_buf);";
+        }
+     }
+     
      return start_record.str();
 }
 
@@ -515,6 +521,67 @@ public:
     }
 };
 
+class StructFinder : public DeclVisitor<StructFinder> {
+    RecordDecl *RD;
+    std::string decl_name;
+public:
+    
+    void VisitRecordDecl(RecordDecl* _RD) {
+        if (_RD->isCompleteDefinition()) {
+            VisitDeclContext(_RD);
+            if (_RD->getDeclName().getAsString().compare(decl_name) == 0) {
+                RD = _RD;
+            }
+        }
+    }
+
+    void VisitLinkageSpecDecl(LinkageSpecDecl *D) {
+        if (D->hasBraces()) {
+            VisitDeclContext(D);
+        } else {
+            Visit(*D->decls_begin());
+        }
+
+    }
+
+    void VisitNamespaceDecl(NamespaceDecl *D) {
+        VisitDeclContext(D);
+    }
+
+    void VisitCXXRecordDecl(CXXRecordDecl *_RD) {
+        if (_RD->isCompleteDefinition()) {
+            VisitDeclContext(_RD);
+            if (_RD->getDeclName().getAsString().compare(decl_name) == 0) {
+                RD = dyn_cast<RecordDecl>(_RD);
+            }
+        }
+    }
+
+    void VisitEnumDecl(EnumDecl *D) {
+        if (D->isCompleteDefinition()) {
+            VisitDeclContext(D);
+        }
+    }
+
+    void VisitDeclContext(DeclContext *DC) {
+        for (DeclContext::decl_iterator D = DC->decls_begin(), DEnd = DC->decls_end();
+             D != DEnd; ++D) {
+            Visit(*D);
+        }
+    }
+
+    void VisitTranslationUnitDecl(TranslationUnitDecl *D) {
+        VisitDeclContext(D);
+    }
+
+    RecordDecl *findDeclByName(Decl *body, std::string _decl_name) {
+        decl_name = _decl_name;
+        RD = NULL;
+        Visit(body);
+        return RD;
+    }
+};
+
 bool TraceParam::parseClassTypeParam(const Expr *expr)
 {
     const Type *type = expr->getType().getTypePtr();
@@ -535,11 +602,12 @@ bool TraceParam::parseClassTypeParam(const Expr *expr)
     for (CXXRecordDecl::method_iterator method = RD->method_begin();
          method != RD->method_end();
          ++method) {
-        if (method->getNameAsString().compare("_trace_represent") == 0 && method->hasBody()) {
-            if (method->hasInlineBody()) {
-                Diags.Report(ast.getFullLoc(method->getLocStart()), InlineTraceRepresentDiag) << method->getSourceRange();
+        if (method->getNameAsString().compare("_trace_represent") == 0) {
+            if (!method->hasInlineBody()) {
+                Diags.Report(ast.getFullLoc(method->getLocStart()), NonInlineTraceRepresentDiag) << method->getSourceRange();
+                return false;
             }
-            
+
             MD = *method;
             break;
         }
@@ -570,9 +638,8 @@ bool TraceParam::parseClassTypeParam(const Expr *expr)
     std::string _type_name = normalizeTypeName(QualType(pointeeType, 0).getAsString());
     std::stringstream trace_call_name;
     trace_call_name << _type_name;
-    trace_call_name << "_tracelog_" << get_next_log_id();
+    trace_call_name << "_tracelog";
     trace_call->trace_call_name = trace_call_name.str();
-    globalTraces.insert(trace_call);
     method_generated =  true;
     flags |= TRACE_PARAM_FLAG_NESTED_LOG;
     expression = "(" + getLiteralExpr(ast, Rewrite, expr) + ")->_trace_represent";
@@ -869,7 +936,6 @@ public:
 
 private:
     void expandTraceLog(unsigned int severity, CallExpr *S);
-    SourceRange getStmtRange(const clang::Stmt *S, bool with_semicolon);
     std::set<const Type *> &referencedTypes;
     std::set<TraceCall *> &globalTraces;
 
@@ -1071,10 +1137,10 @@ void DeclIterator::VisitTemplateDecl(const TemplateDecl *D) {
   // }
 }
 
-SourceRange StmtIterator::getStmtRange(const clang::Stmt *S, bool with_semicolon)
+static SourceRange getDeclRange(SourceManager *SM, const LangOptions *langOpts, const clang::Decl *D, bool with_semicolon)
 {
-    clang::SourceLocation SLoc = SM->getExpansionLoc(S->getLocStart());
-	clang::SourceLocation ELoc = SM->getExpansionLoc(S->getLocEnd());
+    clang::SourceLocation SLoc = SM->getExpansionLoc(D->getLocStart());
+	clang::SourceLocation ELoc = SM->getExpansionLoc(D->getLocEnd());
 	unsigned start = SM->getFileOffset(SLoc);
 	unsigned end   = SM->getFileOffset(ELoc);
 
@@ -1083,7 +1149,7 @@ SourceRange StmtIterator::getStmtRange(const clang::Stmt *S, bool with_semicolon
 	std::pair<clang::FileID, unsigned> LocInfo = SM->getDecomposedLoc(Loc);
 	llvm::StringRef Buffer = SM->getBufferData(LocInfo.first);
 	const char *StrData = Buffer.data()+LocInfo.second;
-	Lexer TheLexer(Loc, langOpts, Buffer.begin(), StrData, Buffer.end());
+	Lexer TheLexer(Loc, *langOpts, Buffer.begin(), StrData, Buffer.end());
 	Token token;
 	TheLexer.LexFromRawLexer(token);
 	end += token.getLength();
@@ -1099,7 +1165,7 @@ SourceRange StmtIterator::getStmtRange(const clang::Stmt *S, bool with_semicolon
 		}
 	}
 
-	return SourceRange(SourceLocation::getFromRawEncoding(start), SourceLocation::getFromRawEncoding(end + 2));
+	return SourceRange(SourceLocation::getFromRawEncoding(start), SourceLocation::getFromRawEncoding(end + 3));
 }
 
 void StmtIterator::VisitStmt(Stmt *S)
@@ -2214,6 +2280,18 @@ public:
         }
     }
 
+
+    void writeGlobalTraces(ASTContext &C) {
+        StructFinder struct_finder;
+        RecordDecl *record_struct = struct_finder.findDeclByName(C.getTranslationUnitDecl(), "trace_log_descriptor");
+        if (record_struct == NULL) {
+            exit(1);
+            return;
+        }
+
+        SourceRange range = getDeclRange(SM, &C.getLangOptions(), record_struct, true);
+        Rewrite.InsertText(range.getEnd(), global_traces.str());
+    }
     
     void HandleTranslationUnit(ASTContext &C) {
         Rewrite.setSourceMgr(C.getSourceManager(), C.getLangOptions());

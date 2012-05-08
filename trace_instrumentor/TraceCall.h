@@ -53,13 +53,13 @@ public:
     std::set<const Type *> &referencedTypes;
     std::set<TraceCall *> &globalTraces;
 
-    unsigned InlineTraceRepresentDiag;
+    unsigned NonInlineTraceRepresentDiag;
     unsigned MultipleReprCallsDiag;
     unsigned EmptyLiteralStringDiag;
 TraceParam(llvm::raw_ostream &out, DiagnosticsEngine &_Diags, ASTContext &_ast, Rewriter *rewriter, std::set<const Type *> &_referencedTypes, std::set<TraceCall *> &global_traces): Out(out), Diags(_Diags), ast(_ast), Rewrite(rewriter), referencedTypes(_referencedTypes), globalTraces(global_traces), type_name("0"), trace_call(NULL) {
         clear();
-        InlineTraceRepresentDiag = Diags.getCustomDiagID(DiagnosticsEngine::Error,
-                                                         "inline __repr__ may cause obscure compilation errors");
+        NonInlineTraceRepresentDiag = Diags.getCustomDiagID(DiagnosticsEngine::Error,
+                                                         "non inline __repr__ may isn't supported");
         MultipleReprCallsDiag = Diags.getCustomDiagID(DiagnosticsEngine::Error,
                                                       "a __repr__ function may have only a single call to REPR() (showing last call to REPR)");
         EmptyLiteralStringDiag = Diags.getCustomDiagID(DiagnosticsEngine::Warning,
