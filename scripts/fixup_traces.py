@@ -98,7 +98,7 @@ if __name__ == '__main__':
     args = sys.argv[1:]
     if len(args) < 2:
         print 'Usage: python fixup_traces.py MACRO_NAME [file1] [file2]'
-        print 'Example: python fixup_traces.py "XN_LOGF(" modules/ssd/devices/ssd_config.cpp'
+        print 'Example: python fixup_traces.py "printf(" my_file.c'
 
     for filename in args[1:]:
         convert_file(filename, args[0])
