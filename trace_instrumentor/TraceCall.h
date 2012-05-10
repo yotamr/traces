@@ -68,7 +68,7 @@ TraceParam(llvm::raw_ostream &out, DiagnosticsEngine &_Diags, ASTContext &_ast, 
     }
 
     bool fromType(QualType type, bool fill_unknown);
-    bool fromExpr(const Expr *E, bool interpret_char_ptr_as_string);
+    bool fromExpr(const Expr *E, bool deref_pointer);
     unsigned long flags;
     std::string const_str;
     std::string expression;

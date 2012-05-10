@@ -726,17 +726,17 @@ bool TraceParam::fromType(QualType type, bool fill_unknown_type) {
     }
 }
 
-bool TraceParam::fromExpr(const Expr *trace_param, bool interpret_char_ptr_as_string)
+bool TraceParam::fromExpr(const Expr *trace_param, bool deref_pointer)
 {
-    if (interpret_char_ptr_as_string && parseStringParam(trace_param)) {
+    if (deref_pointer && parseStringParam(trace_param)) {
         return true; 
     } else if (parseHexBufParam(trace_param)) {
         return true;
     } else if (parseEnumTypeParam(trace_param)) {
         return true;
-    } else if (parseRecordTypeParam(trace_param)) {
+    } else if (deref_pointer && parseRecordTypeParam(trace_param)) {
         return true;
-    } else if (parseClassTypeParam(trace_param)) {
+    } else if (deref_pointer && parseClassTypeParam(trace_param)) {
         return true;
     } else if (parseBasicTypeParam(trace_param)) {
         return true;
