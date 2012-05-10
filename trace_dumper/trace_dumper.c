@@ -615,21 +615,6 @@ static bool_t process_exists(unsigned short pid) {
     }
 }
 
-static bool_t process_changed(struct trace_mapped_buffer *buffer)
-{
-    if (!process_exists(buffer->pid)) {
-        return TRUE;
-    }
-    
-    unsigned long long current_time;
-    get_process_time(buffer->pid, &current_time);
-    if (buffer->process_time == current_time) {
-        return FALSE;
-    } else {
-        return TRUE;
-    }
-}
-
 bool_t is_trace_file(const char *filename)
 {
     if (strncmp(filename, TRACE_FILE_PREFIX, strlen(TRACE_FILE_PREFIX)) != 0) {
@@ -786,13 +771,12 @@ static void discard_buffer(struct trace_dumper_configuration_s *conf, struct tra
     }
 }
 
-
 static int unmap_discarded_buffers(struct trace_dumper_configuration_s *conf)
 {
     int i;
     struct trace_mapped_buffer *mapped_buffer;
     for_each_mapped_buffer(i, mapped_buffer) {
-        if (!process_exists(mapped_buffer->pid) || process_changed(mapped_buffer)) {
+        if (!process_exists(mapped_buffer->pid)) {
             mapped_buffer->dead = 1;
         }
     }
