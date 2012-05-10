@@ -44,7 +44,6 @@ other_class *some_class::method()
     return 0;
 }
 
-
 int main(void) {
     some_class the_class_ptr;
     int value = 0;
