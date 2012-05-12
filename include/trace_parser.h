@@ -21,7 +21,6 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 #include "list_template.h"
 #include <stdio.h>
 #include "trace_defs.h"
-#include "cached_file.h"
 
 enum trace_parser_failure_e {
     TRACE_PARSER_NO_METADATA,
@@ -58,8 +57,10 @@ struct trace_file_info {
     char filename[0x100];
     char machine_id[0x100];
     long boot_time;
+    long long current_offset;
     long long end_offset;
-    cached_file_t cached_file;
+    int fd;
+    void *file_base;
 };
 
 enum trace_parser_event_e {
