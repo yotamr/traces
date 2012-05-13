@@ -31,6 +31,8 @@ void TRACE__fini(void);// __attribute__((destructor));
 typedef unsigned char hex_t;
 #define HEX_REPR(x, size) (hex_t (*)[size]) x
 #define NO_INSTRUMENT __attribute__((no_instrument_function))
+#define INSTRUMENTED __attribute__((no_instrument_function))
+#define ENTIRE_FILE_NO_FUNC_TRACE static const int __traces_file_no_instrument = 1;
 
  #ifndef __has_attribute         
   #define __has_attribute(x) 0
