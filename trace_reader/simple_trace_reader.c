@@ -28,6 +28,7 @@ struct trace_reader_conf {
     int no_color;
     int show_field_names;
     int relative_ts;
+    int compact_trace;
     long long from_time;
     FilenameList files_to_process;
     struct trace_record_matcher_spec_s severity_filter[SEVERITY_FILTER_LEN];
@@ -50,6 +51,8 @@ static const char *usage =
     " -g  --grep [expression]    Display records whose constant string matches the expression   \n"
     " -s  --print-stats          Print per-log occurrence count                                 \n"
     " -m  --dump-metadata        Dump metadata                                                  \n"
+    " -c  --compact-traces       Compact trace output                                                 \n"
+
     "\n";
 
 static const struct option longopts[] = {
@@ -64,6 +67,7 @@ static const struct option longopts[] = {
     { "relative-timestamp", required_argument, 0, 't'},
     { "grep", required_argument, 0, 'g'},
     { "tail", 0, 0, 'i'},
+    { "compact-trace", 0, 0, 'c'},
 	{ 0, 0, 0, 0}
 };
 
@@ -72,7 +76,7 @@ static void print_usage(void)
     printf(usage, "simple_trace_reader");
 }
 
-static const char shortopts[] = "ig:moft:hdnesr";
+static const char shortopts[] = "cig:moft:hdnesr";
 
 #define SECOND (1000000000LL)
 #define MINUTE (SECOND * 60LL)
@@ -144,6 +148,9 @@ static int parse_command_line(struct trace_reader_conf *conf, int argc, char **a
             break;
         case 'i':
             conf->tail = 1;
+            break;
+        case 'c':
+            conf->compact_trace = 1;
             break;
         case 't':
             conf->from_time = format_cmdline_time(optarg);
@@ -233,6 +240,13 @@ static void set_parser_params(struct trace_reader_conf *conf, trace_parser_t *pa
     } else {
         TRACE_PARSER__set_show_field_names(parser, 0);
     }
+
+    if (conf->compact_trace) {
+        TRACE_PARSER__set_compact_traces(parser, 1);
+    } else {
+        TRACE_PARSER__set_compact_traces(parser, 0);
+    }
+
 }
 
 static int dump_all_files(struct trace_reader_conf *conf)

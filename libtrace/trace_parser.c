@@ -171,6 +171,11 @@ void TRACE_PARSER__set_color(trace_parser_t *parser, int has_color)
     parser->color = has_color;
 }
 
+void TRACE_PARSER__set_compact_traces(trace_parser_t *parser, int compact_traces)
+{
+    parser->compact_traces = compact_traces;
+}
+
 void TRACE_PARSER__always_hex(trace_parser_t *parser, int always_hex)
 {
     parser->always_hex = always_hex;
@@ -451,12 +456,19 @@ void format_timestamp(trace_parser_t *parser, unsigned long long ts, char *times
     if (parser->relative_ts) {
         // TODO: Not really relative, is it?
         snprintf(timestamp, timestamp_size, "%llu", ts);
+        return;
+    }
+    
+    time_t seconds = ts / TRACE_SECOND;
+    char fmt_time[200];
+    struct tm *_time = localtime(&seconds);
+    strftime(fmt_time, sizeof(fmt_time), "%d/%m %H:%M:%S", _time);
+    if (!parser->compact_traces) {
+        char *_full_time = ctime(&seconds);
+        _full_time[strlen(_full_time) - 1] = '\0';
+        snprintf(timestamp, timestamp_size, "%s:%-10llu", _full_time, ts % TRACE_SECOND);
     } else {
-        time_t seconds = ts / TRACE_SECOND;
-        char fmt_time[200];
-        strncpy(fmt_time, ctime(&seconds), sizeof(fmt_time));
-        fmt_time[strlen(fmt_time) - 1] = '\0';
-        snprintf(timestamp, timestamp_size, "%s:%-10llu", fmt_time, ts % TRACE_SECOND);
+        strncpy(timestamp, fmt_time, timestamp_size);
     }
 }
 
@@ -756,11 +768,21 @@ int TRACE_PARSER__format_typed_record(trace_parser_t *parser, struct trace_parse
 
 
     if (parser->color) {
-        APPEND_FORMATTED_TEXT("%s " _F_MAGENTA("%-20s ") _ANSI_DEFAULTS("%s [") _F_BLUE_BOLD("%5d") _ANSI_DEFAULTS("]") _F_GREY(" : ") _ANSI_DEFAULTS(""),
-                              severity_str, buffer_name, timestamp, record->tid);
+        if (parser->compact_traces) {
+            APPEND_FORMATTED_TEXT("%s " _ANSI_DEFAULTS("%s [") _F_BLUE_BOLD("%5d:%5d") _ANSI_DEFAULTS("]") _F_GREY(" : ") _ANSI_DEFAULTS(""),
+                                  severity_str, timestamp, record->pid, record->tid);
+        } else {
+            APPEND_FORMATTED_TEXT("%s " _F_MAGENTA("%-20s ") _ANSI_DEFAULTS("%s [") _F_BLUE_BOLD("%5d") _ANSI_DEFAULTS("]") _F_GREY(" : ") _ANSI_DEFAULTS(""),
+                                  severity_str, buffer_name, timestamp, record->tid);
+        }
     } else {
-        APPEND_FORMATTED_TEXT("%s %-20s %s [%5d] : ",
-                              severity_str, buffer_name, timestamp, record->tid);
+        if (parser->compact_traces) {
+            APPEND_FORMATTED_TEXT("%s %s [%5d:%5d] : ",
+                                  severity_str, timestamp, record->pid, record->tid);
+        } else {
+            APPEND_FORMATTED_TEXT("%s %-20s %s [%5d] : ",
+                                  severity_str, buffer_name, timestamp, record->tid);
+        }
     }
     
     if (parser->indent) {

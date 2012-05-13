@@ -164,6 +164,7 @@ typedef struct trace_parser {
     void *arg;
     FILE *out_file;
     int color;
+    int compact_traces;
     int always_hex;
     int indent;
     int relative_ts;
@@ -184,6 +185,7 @@ int TRACE_PARSER__process_next_record_from_file(trace_parser_t *parser);
 void TRACE_PARSER__from_external_stream(trace_parser_t *parser, trace_parser_event_handler_t event_handler, void *arg);
 void TRACE_PARSER__fini(trace_parser_t *parser);
 void TRACE_PARSER__set_color(trace_parser_t *parser, int has_color);
+void TRACE_PARSER__set_compact_traces(trace_parser_t *parser, int compact_traces);
 void TRACE_PARSER__set_indent(trace_parser_t *parser, int indent);
 void TRACE_PARSER__set_wait_for_input(trace_parser_t *parser, int wait_for_input);
 void TRACE_PARSER__set_verbose(trace_parser_t *parser, int verbose);
