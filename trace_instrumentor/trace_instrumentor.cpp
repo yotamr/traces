@@ -147,6 +147,7 @@ bool TraceParam::parseBasicTypeParam(QualType qual_type)
             flags |= TRACE_PARAM_FLAG_NUM_32;
         }
 
+        size = ast.getTypeSize(type) / 8;
         return true;
     }
 
@@ -174,7 +175,6 @@ bool TraceParam::parseBasicTypeParam(QualType qual_type)
         break;
     case 64:
         flags |= TRACE_PARAM_FLAG_NUM_64;
-        size = 8;
         break;
     default:
         return false;
@@ -190,6 +190,8 @@ bool TraceParam::parseBasicTypeParam(QualType qual_type)
     return true;
 
 }
+
+    
 bool TraceParam::parseBasicTypeParam(const Expr *expr)
 {
     const Expr *stripped_expr = expr->IgnoreImpCasts();
@@ -242,6 +244,7 @@ bool TraceParam::parseEnumTypeParam(QualType qual_type) {
     referenceType(qual_type.split().first);
     flags |= TRACE_PARAM_FLAG_ENUM;
     type_name = qual_type.getAsString();
+    size = 4;
     return true;
 }
 
@@ -325,12 +328,17 @@ void TraceCall::replaceExpr(const Expr *expr, std::string replacement)
 
 const char *sev_to_str[] = {"INVALID", "FUNC_TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"};
 
-std::string TraceCall::commitRecord()
+std::string TraceCall::constlength_commitRecord()
+{
+    return "__builtin_memcpy(" + castTo(ast.getLangOptions(), "_record_ptr", "char *") + ", " + castTo(ast.getLangOptions(), "&_record", "char *") + ", sizeof(struct trace_record));";
+}
+
+std::string TraceCall::varlength_commitRecord()
 {
     return "__builtin_memcpy(" + castTo(ast.getLangOptions(), "(*__record_ptr)", "char *") + ", " + castTo(ast.getLangOptions(), "_record", "char *") + ", sizeof(struct trace_record));";
 }
 
-std::string TraceCall::getRecord(enum trace_severity severity)
+std::string TraceCall::varlength_getRecord(enum trace_severity severity)
 {
     std::stringstream code;
     
@@ -338,7 +346,15 @@ std::string TraceCall::getRecord(enum trace_severity severity)
     return code.str();
 }
 
-std::string TraceCall::initializeTypedRecord(enum trace_severity severity)
+std::string TraceCall::constlength_getRecord(enum trace_severity severity)
+{
+    std::stringstream code;
+    
+    code << "_record_ptr = trace_get_record(TRACE_SEV_"  << sev_to_str[severity] << ", &_record.generation);";
+    return code.str();
+}
+
+std::string TraceCall::varlength_initializeTypedRecord(enum trace_severity severity)
 {
     std::stringstream code;
     code << "_record->ts = trace_get_nsec();";
@@ -354,10 +370,34 @@ std::string TraceCall::initializeTypedRecord(enum trace_severity severity)
     return code.str();
 }
 
-std::string TraceCall::commitAndAllocateRecord(enum trace_severity severity) {
+std::string TraceCall::constlength_initializeTypedRecord(enum trace_severity severity, unsigned int *buf_left)
+{
     std::stringstream code;
-    code << commitRecord();
-    code << getRecord(severity);
+    code << "_record.ts = trace_get_nsec();";
+    code << "_record.pid = trace_get_pid();";
+    code << "_record.tid =  trace_get_tid(); ";
+    code << "_record.termination = TRACE_TERMINATION_FIRST;";
+    code << "_record.rec_type  = TRACE_REC_TYPE_TYPED;";
+    code << "_record.nesting = trace_get_nesting_level();";
+    code << "_record.severity = TRACE_SEV_" << sev_to_str[severity] << ";";
+    code << "_record.u.typed.log_id = &tracelog - &__static_log_information_start;";
+    (*buf_left) = TRACE_RECORD_PAYLOAD_SIZE - 4;
+    return code.str();
+}
+
+std::string TraceCall::constlength_commitAndAllocateRecord(enum trace_severity severity, unsigned int *buf_left) {
+    std::stringstream code;
+    code << constlength_commitRecord();
+    code << constlength_getRecord(severity);
+    code << "_record.termination = 0;";
+    (*buf_left) = TRACE_RECORD_PAYLOAD_SIZE;
+    return code.str();
+}
+
+std::string TraceCall::varlength_commitAndAllocateRecord(enum trace_severity severity) {
+    std::stringstream code;
+    code << varlength_commitRecord();
+    code << varlength_getRecord(severity);
     code << "_record->termination = 0;";
     code << "(*typed_buf) = &_record->u.payload[0];";
     code << "(*buf_left) = " << TRACE_RECORD_PAYLOAD_SIZE << ";";
@@ -371,7 +411,55 @@ std::string TraceCall::genMIN(std::string &a, std::string &b)
     return code.str();
 }
 
-std::string TraceCall::getFullTraceWriteExpression()
+std::string TraceCall::varlength_getTraceWriteExpression()
+{
+    std::stringstream start_record;
+     for (unsigned int i = 0; i < args.size(); i++) {
+        TraceParam &param = args[i];
+
+        if (param.isSimple()) {
+            start_record << varlength_writeSimpleValue(param.expression, param.type_name, param.is_pointer, param.is_reference);
+        }
+
+        if (param.isVarString()) {
+            std::string buf_left_str("(*buf_left) - 1");
+            std::string rlen_str("rlen");
+
+            start_record << "{ " << param.type_name << " _s_ = (" << param.expression << ");";
+            start_record << "unsigned int rlen = _s_ ? __builtin_strlen(" << castTo(ast.getLangOptions(), "_s_", "const char *") << "): 0;";
+            start_record << "do { ";
+            start_record << "unsigned int copy_size = " << genMIN(rlen_str, buf_left_str) << ";";
+            start_record << "__builtin_memcpy(&((*typed_buf)[1]), _s_, copy_size);";
+            start_record << "(*typed_buf)[0] = copy_size;";
+            start_record << "(*typed_buf)[0] |= (rlen - copy_size) ? 128 : 0;";
+            start_record << "(*typed_buf) += 1 + copy_size;";
+            start_record << "rlen -= copy_size;";
+            start_record << "(*buf_left) -= copy_size + 1;";
+            start_record << "_s_ += copy_size;";
+            start_record << "if (rlen || ((*buf_left) == 0)) {";
+            start_record << varlength_commitAndAllocateRecord(severity);
+            start_record << "}} while (rlen); }";
+        }
+
+        if (param.trace_call) {
+            if (!traceCallReferenced(globalTraces, param.trace_call->trace_call_name)) {
+                globalTraces.insert(param.trace_call);
+            }
+
+            // TODO: Just do a single copy
+            std::string logid = "(&" + param.trace_call->trace_call_name + "- &__static_log_information_start)";
+            std::string _type_name = "int";
+            start_record << varlength_writeSimpleValue(logid, _type_name, false, false);
+            
+            start_record << param.expression;
+            start_record << "(buf_left, _record, __record_ptr, typed_buf);";
+        }
+     }
+     
+     return start_record.str();
+}
+    
+std::string TraceCall::varlength_getFullTraceWriteExpression()
 {
     std::stringstream get_record;
     std::stringstream start_record;
@@ -384,16 +472,63 @@ std::string TraceCall::getFullTraceWriteExpression()
     get_record << "struct trace_record **__record_ptr = &__record_ptr_alloc;";
     get_record << "unsigned char *_payload_ptr = " << castTo(ast.getLangOptions(), "&_record->u.payload", "unsigned char *") << ";";
     get_record << "unsigned char **typed_buf =  &_payload_ptr;";
-    get_record << getRecord(severity);
-    start_record << initializeTypedRecord(severity);
-    start_record << getTraceWriteExpression();
+    get_record << varlength_getRecord(severity);
+    start_record << varlength_initializeTypedRecord(severity);
+    start_record << varlength_getTraceWriteExpression();
     start_record << "_record->termination |= TRACE_TERMINATION_LAST;";
-    start_record << commitRecord();
+    start_record << varlength_commitRecord();
 
     return get_record.str() + start_record.str();
 }
 
-std::string TraceCall::writeSimpleValue(std::string &expression, std::string &type_name, bool is_pointer, bool is_reference)
+std::string TraceCall::constlength_getFullTraceWriteExpression()
+{
+    std::stringstream get_record;
+    std::stringstream start_record;
+    std::stringstream trace_record_payload;
+    unsigned int buf_left = 0;
+    get_record << "struct trace_record _record;";
+    get_record << "struct trace_record *_record_ptr;";
+    get_record << constlength_getRecord(severity);
+    start_record << constlength_initializeTypedRecord(severity, &buf_left);
+    start_record << constlength_getTraceWriteExpression(&buf_left);
+    start_record << "_record.termination |= TRACE_TERMINATION_LAST;";
+    start_record << constlength_commitRecord();
+
+    return get_record.str() + start_record.str();
+}
+
+    
+std::string TraceCall::constlength_writeSimpleValue(std::string &expression, std::string &type_name, bool is_pointer, bool is_reference, unsigned int value_size, unsigned int *buf_left)
+{
+    std::stringstream serialized;
+
+    serialized << "{";
+    if (is_pointer) {
+        serialized << "volatile const void * __src__ =  " << castTo(ast.getLangOptions(), expression, "volatile const void *") << ";";
+    } else if (is_reference) {
+        serialized << "volatile const void * __src__ =  " << castTo(ast.getLangOptions(), "&" + expression, "volatile const void *") << ";";
+    } else {
+        serialized << type_name <<  " __src__ = (" << expression << ");";
+    }
+    
+    unsigned int copy_size = MIN(value_size, (*buf_left));
+    serialized << "__builtin_memcpy((&_record.u.payload[" << TRACE_RECORD_PAYLOAD_SIZE - (*buf_left) << "]), &__src__," << copy_size << ");";
+    (*buf_left) -= copy_size;
+    if ((*buf_left) == 0) {
+        if (copy_size) {
+            serialized << constlength_commitAndAllocateRecord(severity, buf_left);
+            serialized << "__builtin_memcpy(&_record.u.payload, " + castTo(ast.getLangOptions(), "(&__src__", "const char *") << "+ " << copy_size << "), " << value_size - copy_size << ");";
+        }
+        
+        (*buf_left) -= value_size - copy_size;
+    }
+
+    serialized << "}";
+    return serialized.str();
+}
+    
+std::string TraceCall::varlength_writeSimpleValue(std::string &expression, std::string &type_name, bool is_pointer, bool is_reference)
 {
     std::stringstream serialized;
     std::string expression_sizeof = "sizeof(__src__)";
@@ -414,7 +549,7 @@ std::string TraceCall::writeSimpleValue(std::string &expression, std::string &ty
     serialized << "(*typed_buf) += copy_size;";
     serialized << "(*buf_left) -= copy_size;";
     serialized << "if ((*buf_left) == 0) {";
-    serialized << commitAndAllocateRecord(severity);
+    serialized << varlength_commitAndAllocateRecord(severity);
     serialized << "__builtin_memcpy((*typed_buf), " + castTo(ast.getLangOptions(), "&__src__", "const char *") + "+ copy_size, sizeof(__src__) - copy_size);";
     serialized << "(*typed_buf) += " << expression_sizeof << " - copy_size;";
     serialized << "(*buf_left) -= " << expression_sizeof << " - copy_size;";
@@ -423,68 +558,39 @@ std::string TraceCall::writeSimpleValue(std::string &expression, std::string &ty
     return serialized.str();
 }
 
-std::string TraceCall::getTraceWriteExpression()
+std::string TraceCall::constlength_getTraceWriteExpression(unsigned int *buf_left)
 {
     std::stringstream start_record;
-     for (unsigned int i = 0; i < args.size(); i++) {
+    for (unsigned int i = 0; i < args.size(); i++) {
         TraceParam &param = args[i];
-
+        
         if (param.isSimple()) {
-            start_record << writeSimpleValue(param.expression, param.type_name, param.is_pointer, param.is_reference);
+            start_record << constlength_writeSimpleValue(param.expression, param.type_name, param.is_pointer, param.is_reference, param.size, buf_left);
         }
 
-        if (param.isVarString()) {
-            std::string buf_left_str("(*buf_left) - 1");
-            std::string rlen_str("rlen");
+    }
 
-            start_record << "{ " << param.type_name << " _s_ = (" << param.expression << ");";
-            start_record << "unsigned int rlen = _s_ ? __builtin_strlen(" << castTo(ast.getLangOptions(), "_s_", "const char *") << "): 0;";
-            start_record << "do { ";
-            start_record << "unsigned int copy_size = " << genMIN(rlen_str, buf_left_str) << ";";
-            start_record << "__builtin_memcpy(&((*typed_buf)[1]), _s_, copy_size);";
-            start_record << "(*typed_buf)[0] = copy_size;";
-            start_record << "(*typed_buf)[0] |= (rlen - copy_size) ? 128 : 0;";
-            start_record << "(*typed_buf) += 1 + copy_size;";
-            start_record << "rlen -= copy_size;";
-            start_record << "(*buf_left) -= copy_size + 1;";
-            start_record << "_s_ += copy_size;";
-            start_record << "if (rlen || ((*buf_left) == 0)) {";
-            start_record << commitAndAllocateRecord(severity);
-            start_record << "}} while (rlen); }";
-        }
-
-        if (param.trace_call) {
-            if (!traceCallReferenced(globalTraces, param.trace_call->trace_call_name)) {
-                globalTraces.insert(param.trace_call);
-            }
-
-            // TODO: Just do a single copy
-            std::string logid = "(&" + param.trace_call->trace_call_name + "- &__static_log_information_start)";
-            std::string _type_name = "int";
-            start_record << writeSimpleValue(logid, _type_name, false, false);
-            
-            start_record << param.expression;
-            start_record << "(buf_left, _record, __record_ptr, typed_buf);";
-        }
-     }
-     
-     return start_record.str();
+    return start_record.str();
 }
 
 std::string TraceCall::getExpansion() {
-    return getTraceDeclaration() + getFullTraceWriteExpression();
+    if (constantSizeTrace()) {
+        return getTraceDeclaration() + constlength_getFullTraceWriteExpression();
+    } else {
+        return getTraceDeclaration() + varlength_getFullTraceWriteExpression();
+    }
 }
 
 void TraceCall::expand()
 {
     std::string declaration = getTraceDeclaration();
-    std::string trace_write_expression = getFullTraceWriteExpression();
+    std::string trace_write_expression = varlength_getFullTraceWriteExpression();
     replaceExpr(call_expr, "{" + declaration + "if (current_trace_buffer != 0){"  + trace_write_expression + "}}");    
 }
 
 void TraceCall::expandWithoutDeclaration()
 {
-    std::string trace_write_expression = getTraceWriteExpression();
+    std::string trace_write_expression = varlength_getTraceWriteExpression();
     replaceExpr(call_expr, "if (current_trace_buffer != 0){"  + trace_write_expression + "}");    
 }
 
@@ -829,6 +935,23 @@ static bool valid_param_name(std::string &name)
 
     return true;
 }
+
+bool TraceCall::constantSizeTrace(void)
+{
+    for (unsigned int i = 0; i < args.size(); i++) {
+        TraceParam &param = args[i];
+        if (param.isVarString()) {
+            return false;
+        }
+
+        if (param.trace_call) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool TraceCall::parseTraceParams(CallExpr *S, std::vector<TraceParam> &args)
 {
     Expr **call_args = S->getArgs();

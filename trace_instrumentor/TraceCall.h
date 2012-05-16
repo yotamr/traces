@@ -29,6 +29,7 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 #include "llvm/Support/raw_ostream.h"
 #include "trace_defs.h"
 
+#include "../include/min_max.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sstream>
@@ -263,16 +264,27 @@ private:
 
     std::string getTypeDefinitionExternDeclratations();
     std::string genMIN(std::string &a, std::string &b);
-    std::string writeSimpleValue(std::string &expression, std::string &type_name, bool is_pointer, bool is_reference);
-    std::string commitAndAllocateRecord(enum trace_severity severity);
-    std::string getRecord(enum trace_severity severity);
-    std::string initializeTypedRecord(enum trace_severity severity);
-    std::string commitRecord();
+    
+    std::string constlength_writeSimpleValue(std::string &expression, std::string &type_name, bool is_pointer, bool is_reference, unsigned int size, unsigned int *buf_left);
+    std::string constlength_commitAndAllocateRecord(enum trace_severity severity, unsigned int *buf_left);
+    std::string constlength_getRecord(enum trace_severity severity);
+    std::string constlength_initializeTypedRecord(enum trace_severity severity, unsigned int *buf_left);
+    std::string constlength_commitRecord();
+
+    std::string varlength_writeSimpleValue(std::string &expression, std::string &type_name, bool is_pointer, bool is_reference);
+    std::string varlength_commitAndAllocateRecord(enum trace_severity severity);
+    std::string varlength_getRecord(enum trace_severity severity);
+    std::string varlength_initializeTypedRecord(enum trace_severity severity);
+    std::string varlength_commitRecord();
+    bool constantSizeTrace();
     void unknownTraceParam(const Expr *trace_param);
 
 
-    std::string getTraceWriteExpression();
-    std::string getFullTraceWriteExpression();
+    std::string constlength_getTraceWriteExpression(unsigned int *buf_left);
+    std::string constlength_getFullTraceWriteExpression();
+
+    std::string varlength_getTraceWriteExpression();
+    std::string varlength_getFullTraceWriteExpression();
 };
 }
 
