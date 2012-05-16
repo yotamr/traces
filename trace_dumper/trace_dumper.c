@@ -125,7 +125,7 @@ struct trace_dumper_configuration_s {
     const char *quota_specification;
     long long max_records_per_logdir;
     unsigned long long max_records_per_file;
-
+    unsigned long long max_records_per_second;
 	struct trace_record_file record_file;
 	unsigned int last_flush_offset;
     enum operation_type op_type;
@@ -1118,6 +1118,10 @@ static int open_trace_file_if_necessary(struct trace_dumper_configuration_s *con
 
 static void handle_overwrite(struct trace_dumper_configuration_s *conf)
 {
+    if (!conf->max_records_per_second)  {
+        return;
+    }
+
     unsigned long long current_time = trace_get_nsec();
     DEBUG("Checking overrwrite. Wrote", conf->record_file.records_written - conf->last_overwrite_test_record_count,
                  "records in a second. Minimal severity is now", conf->minimal_allowed_severity);
@@ -1125,7 +1129,7 @@ static void handle_overwrite(struct trace_dumper_configuration_s *conf)
         return;
     }
     
-    if (conf->record_file.records_written - conf->last_overwrite_test_record_count > OVERWRITE_THRESHOLD_PER_SECOND) {
+    if (conf->record_file.records_written - conf->last_overwrite_test_record_count > conf->max_records_per_second) {
         conf->minimal_allowed_severity = MIN(conf->minimal_allowed_severity + 1, TRACE_SEV__MAX);
         conf->next_possible_overwrite_relaxation = current_time + RELAXATION_BACKOFF;
         WARN("Overrwrite occurred. Wrote", conf->record_file.records_written - conf->last_overwrite_test_record_count,
@@ -1218,6 +1222,7 @@ static const char usage[] = {
     " -d  --debug-online                    Display DEBUG records in online mode                                   \n" \
     " -s  --syslog                          In online mode, write the entries to syslog instead of displaying them \n" \
     " -q  --quota-size [bytes/percent]      Specify the total number of bytes that may be taken up by trace files  \n"
+    " -r  --record-write-limit [records]    Specify maximal amount of records that can be written per-second (unlimited if not specified)  \n"
     "\n"};
 
 static const struct option longopts[] = {
@@ -1231,6 +1236,7 @@ static const struct option longopts[] = {
     { "pid", required_argument, 0, 'p'},
     { "write", optional_argument, 0, 'w'},
     { "quota-size", required_argument, 0, 'q'},
+    { "record-write-limit", required_argument, 0, 'r'},
 
 	{ 0, 0, 0, 0}
 };
@@ -1240,7 +1246,7 @@ static void print_usage(void)
     printf(usage, "trace_dumper");
 }
 
-static const char shortopts[] = "q:sw::p:hf:odb:n";
+static const char shortopts[] = "r:q:sw::p:hf:odb:n";
 
 #define DEFAULT_LOG_DIRECTORY "/mnt/logs"
 static void clear_mapped_records(struct trace_dumper_configuration_s *conf)
@@ -1293,6 +1299,9 @@ static int parse_commandline(struct trace_dumper_configuration_s *conf, int argc
             break;
         case 'q':
             conf->quota_specification = optarg;
+            break;
+        case 'r':
+            conf->max_records_per_second = atoi(optarg);
             break;
         case '?':
             print_usage();
