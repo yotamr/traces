@@ -841,7 +841,7 @@ static int trace_open_file(struct trace_dumper_configuration_s *conf, struct tra
     }
 
     INFO("Opening trace file:", filename);
-    record_file->fd = open(filename, O_WRONLY | O_CREAT, 0644);
+    record_file->fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (record_file->fd < 0) {
         fprintf(stderr, "Error opening %s for writing\n", filename);
         return -1;
