@@ -1,3 +1,5 @@
+#undef _GNU_SOURCE
+#define _GNU_SOURCE
 #include <getopt.h>
 #include <signal.h>
 #include <libgen.h>
@@ -11,6 +13,7 @@
 #include <dirent.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
 #include <sys/uio.h>
 #include <sys/time.h>
 #include <sys/utsname.h>
@@ -238,12 +241,41 @@ static int total_iovec_len(const struct iovec *iov, int iovcnt)
 
     return total;
 }
+
+static int trace_dumper_writev(int fd, const struct iovec *iov, int iovcnt)
+{
+    int length = total_iovec_len(iov, iovcnt);
+    char *buffer = (char *) malloc(length);
+    size_t to_copy = length;
+    char *tmp_buffer = buffer;
+    int i;
+    for (i = 0; i < iovcnt; ++i)
+    {
+        size_t copy = MIN(iov[i].iov_len, to_copy);
+        tmp_buffer = mempcpy((void *) tmp_buffer, (void *) iov[i].iov_base, copy);
+
+        to_copy -= copy;
+        if (to_copy == 0) {
+            break;
+        }
+    }
+
+    ssize_t bytes_written = write(fd, buffer, length);
+    free(buffer);
+    return bytes_written;
+}
+
 static int trace_dumper_write(struct trace_dumper_configuration_s *conf, struct trace_record_file *record_file, const struct iovec *iov, int iovcnt)
 {
     int expected_bytes = total_iovec_len(iov, iovcnt);
     int rc = 0;
     if (conf->record_file.fd >= 0) {
-        rc = writev(record_file->fd, iov, iovcnt);
+        if (iovcnt >= sysconf(_SC_IOV_MAX)) {
+            rc = trace_dumper_writev(record_file->fd, iov, iovcnt);
+        } else {
+            rc = writev(record_file->fd, iov, iovcnt);
+        }
+        
         if (rc != expected_bytes) {
             return -1;
         }
