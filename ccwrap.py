@@ -20,7 +20,7 @@ import re
 import subprocess
 
 from ldwrap import main as ldmodwrap_main
-plugin_path = os.getenv('TRACE_INSTRUMENTOR', os.path.join(os.path.dirname(sys.argv[0]), "trace_instrumentor/trace_instrumentor.so"))
+plugin_path = os.getenv('TRACE_INSTRUMENTOR', "/home/yotam/Code/traces/trace_instrumentor/trace_instrumentor.so")
 clang_path = os.getenv('TRACE_CLANG_PATH', "clang")
 
 def spawn(args):
@@ -31,9 +31,9 @@ class Error(Exception):
 
 def translate(pp_file, out_pp_file, language, cflags):
     if language == 'c++':
-        args = [clang_path, "-cc1", "-Wno-attributes", "-fcolor-diagnostics", "-fgnu-keywords", "-std=gnu++11", "-x", "c++", "-fcxx-exceptions", pp_file, "-o", out_pp_file]
+        args = [clang_path, "-cc1", "-w", "-Wno-attributes", "-fcolor-diagnostics", "-triple", "armv7-unknown-linux-gnueabi", "-fsyntax-only", "-fgnu-keywords", "-x", "c++", "-fcxx-exceptions", pp_file, "-o", out_pp_file]
     else:
-        args = [clang_path, "-cc1", "-Wno-attributes", "-fcolor-diagnostics", "-fgnu-keywords", "-std=gnu99", pp_file, "-o", out_pp_file]
+        args = [clang_path, "-cc1", "-w", "-Wno-attributes", "-fcolor-diagnostics", "-triple", "armv7-unknown-linux-gnueabi", "-fsyntax-only", "-fgnu-keywords", "-std=gnu99", pp_file, "-o", out_pp_file]
 
     args.extend(cflags)
     args.extend(["-load", plugin_path, "-plugin", "trace-instrument"])
@@ -85,6 +85,9 @@ def main():
     cpp_args = list(args)
     cpp_args[args.index('-c')] = '-E'
     c_file = args[c_index]
+    if 'ANDROID_SINGLETON_STATIC_INSTANCE' in file(c_file).read():
+        return spawn(args)
+
     cflags = get_cflags(args)
     if p.endswith('cpp'):
         language = 'c++'
@@ -116,14 +119,18 @@ def main():
         return ret
     clang_ret = 0;
 
+    # new_cpp = file(pp_file).read().replace('typedef unsigned int size_t;', 'typedef unsigned long size_t;')
+    # file(pp_file, "wb").write(new_cpp)
     try:
         clang_ret = maybe_translate(pp_file, out_pp_file, language, cflags)
         if clang_ret != 0:
             return -1
 
+        # new_cpp = file(out_pp_file).read().replace('typedef unsigned long size_t;', 'typedef unsigned int size_t;')
+        # file(out_pp_file, "wb").write(new_cpp)
+
         comp_args = []
         comp_args.extend(list(args))
-
         if '-o' not in comp_args:
             o_file = os.path.splitext(c_file)[0] + '.o'
             comp_args.extend(['-o', o_file])
@@ -132,11 +139,13 @@ def main():
         ret = spawn(comp_args)
         return ret;
     finally:
-        os.unlink(pp_file)
+        pass
+        #os.unlink(pp_file)
         if os.getenv("TRACE_NO_UNLINK_PPFILE", "") == "":
             # Delete the pp.i file only if the clang invocation was successful
             if clang_ret == 0:
-               os.unlink(out_pp_file)
+                pass
+               #os.unlink(out_pp_file)
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -76,7 +76,6 @@ struct trace_mapped_buffer {
     struct trace_mapped_metadata metadata;
     unsigned short pid;
     unsigned int dead;
-    unsigned long long process_time;
 };
 
 CREATE_LIST_PROTOTYPE(MappedBuffers, struct trace_mapped_buffer);
@@ -219,7 +218,7 @@ static int dump_iovector_to_parser(struct trace_dumper_configuration_s *conf, st
                 }
             }
 
-            if ((unsigned char *)iovec_base_ptr - (unsigned char *)iov[i].iov_base == (unsigned int) iov[i].iov_len) {
+            if ((unsigned int) ((unsigned char *)iovec_base_ptr - (unsigned char *)iov[i].iov_base) == (unsigned int) iov[i].iov_len) {
                 break;
             }
         }
@@ -344,27 +343,6 @@ static int trace_dump_metadata(struct trace_dumper_configuration_s *conf, struct
     return rc;
 }
 
-static int stat_pid(unsigned short pid, struct stat *stat_buf)
-{
-    char filename[0x100];
-    snprintf(filename, sizeof(filename), "/proc/%d", pid);
-    return stat(filename, stat_buf);
-}
-
-
-static int get_process_time(unsigned short pid, unsigned long long *curtime)
-{
-    struct stat stat_buf;
-    int rc = stat_pid(pid, &stat_buf);
-    if (0 != rc) {
-        return -1;
-    }
-
-    *curtime = stat_buf.st_ctim.tv_sec * 1000000000;
-    *curtime += stat_buf.st_ctim.tv_nsec;
-    return 0;
-}
-
 static int delete_shm_files(unsigned short pid)
 {
     INFO("Deleting shm files for pid", pid);
@@ -391,6 +369,18 @@ bool_t trace_should_filter(struct trace_dumper_configuration_s *conf __attribute
     strncpy(filter, buffer_name, sizeof(filter));
     int rc = BufferFilter__find_element(&conf->filtered_buffers, &filter);
     if (rc >= 0) {
+        return TRUE;
+    } else {
+        return FALSE;
+    }
+}
+
+static bool_t process_exists(unsigned short pid) {
+    struct stat buf;
+    char filename[0x100];
+    snprintf(filename, sizeof(filename), "/proc/%d", pid);
+    int rc = stat(filename, &buf);
+    if (0 == rc) {
         return TRUE;
     } else {
         return FALSE;
@@ -492,16 +482,12 @@ static int map_buffer(struct trace_dumper_configuration_s *conf, pid_t pid)
     new_mapped_buffer->metadata.base_address = mapped_static_log_data_addr;
     new_mapped_buffer->pid = (unsigned short) pid;
     new_mapped_buffer->metadata_dumped = FALSE;
-    unsigned long long process_time;
-    rc = get_process_time(pid, &process_time);
-    if (0 != rc) {
+    if (!process_exists(pid)) {
         rc = 0;
         WARN("Process", pid, "no longer exists");
         dead = 1;
-        process_time = 0;
     }
 
-    new_mapped_buffer->process_time = process_time;
     relocate_metadata(static_log_data_region->base_address, mapped_static_log_data_addr, (char *) new_mapped_buffer->metadata.descriptors,
                       new_mapped_buffer->metadata.log_descriptor_count, new_mapped_buffer->metadata.type_definition_count);
     static_log_data_region->base_address = mapped_static_log_data_addr;
@@ -601,18 +587,6 @@ static int map_new_buffers(struct trace_dumper_configuration_s *conf)
 exit:
     closedir(dir);
     return 0;
-}
-
-static bool_t process_exists(unsigned short pid) {
-    struct stat buf;
-    char filename[0x100];
-    snprintf(filename, sizeof(filename), "/proc/%d", pid);
-    int rc = stat(filename, &buf);
-    if (0 == rc) {
-        return TRUE;
-    } else {
-        return FALSE;
-    }
 }
 
 bool_t is_trace_file(const char *filename)

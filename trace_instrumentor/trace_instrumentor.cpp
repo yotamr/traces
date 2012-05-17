@@ -779,9 +779,7 @@ enum trace_severity TraceCall::functionNameToTraceSeverity(std::string function_
 
 bool TraceParam::fromType(QualType type, bool fill_unknown_type) {
     QualType canonical_type = type.getCanonicalType();
-    if (parseEnumTypeParam(canonical_type)) {
-        return true;
-    } else if (parseBasicTypeParam(canonical_type)) {
+    if (parseBasicTypeParam(canonical_type)) {
         return true;
     }
 
@@ -798,8 +796,6 @@ bool TraceParam::fromExpr(const Expr *trace_param, bool deref_pointer)
     if (deref_pointer && parseStringParam(trace_param)) {
         return true; 
     } else if (parseHexBufParam(trace_param)) {
-        return true;
-    } else if (parseEnumTypeParam(trace_param)) {
         return true;
     } else if (deref_pointer && parseRecordTypeParam(trace_param)) {
         return true;

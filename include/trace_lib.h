@@ -34,11 +34,7 @@ extern "C" {
 #define __repr__ _trace_represent(unsigned int *buf_left, struct trace_record *_record, struct trace_record **__record_ptr, unsigned char **typed_buf)
 #ifdef ANDROID
 #ifndef	_UNISTD_H
-#ifdef __cplusplus     
-    extern int syscall (int __sysno, ...) throw ();
-#else
     extern int syscall(int __sysno, ...);
-#endif //__clusplus
 #endif //_UNISTD
 #else //ANDROID
 #ifndef _SYS_SYSCALL_H_
@@ -55,7 +51,7 @@ extern struct trace_buffer *current_trace_buffer;
 extern struct trace_log_descriptor __static_log_information_start;
 extern struct trace_log_descriptor __static_log_information_end;
 extern struct trace_type_definition *__type_information_start;
-extern __thread unsigned short trace_current_nesting; 
+static __thread unsigned long long trace_current_nesting; 
 
 static inline unsigned short int trace_get_pid(void)
 {
