@@ -115,6 +115,7 @@ struct trace_dumper_configuration_s {
     unsigned int online;
     unsigned int debug_online;
     unsigned int syslog;
+    unsigned short port;
     unsigned long long start_time;
     int no_color;
     enum trace_severity minimal_allowed_severity;
@@ -426,7 +427,6 @@ static int map_buffer(struct trace_dumper_configuration_s *conf, pid_t pid)
     }
 
     dynamic_fd = open(full_dynamic_trace_filename, O_RDWR, 0);
-    printf("opened (1) %s\n", full_dynamic_trace_filename);
     if (dynamic_fd < 0) {
         ERROR("Unable to open dynamic buffer %s: %s", dynamic_trace_filename, strerror(errno));
         rc = -1;
@@ -434,7 +434,6 @@ static int map_buffer(struct trace_dumper_configuration_s *conf, pid_t pid)
     }
     
     static_fd = open(full_static_log_data_filename, O_RDWR, 0);
-    printf("opened (2) %s\n", full_static_log_data_filename);
     if (static_fd < 0) {
         ERROR("Unable to open static buffer: %s", strerror(errno));
         rc = -1;
@@ -1212,12 +1211,13 @@ static const char usage[] = {
     " -h, --help                            Display this help message                                              \n" \
     " -f  --filter [buffer_name]            Filter out specified buffer name                                       \n" \
     " -o  --online                          Show data from buffers as it arrives (slows performance)               \n" \
-    " -w  --write-to-file[filename]         Write log records to file                                              \n" \
+    " -w  --write[filename]                 Write log records to file/network                                      \n" \
     " -b  --logdir                          Specify the base log directory trace files are written to              \n" \
     " -p  --pid [pid]                       Attach the specified process                                           \n" \
     " -d  --debug-online                    Display DEBUG records in online mode                                   \n" \
     " -s  --syslog                          In online mode, write the entries to syslog instead of displaying them \n" \
     " -q  --quota-size [bytes/percent]      Specify the total number of bytes that may be taken up by trace files  \n"
+    " -p  --port [port]                     Specify a destination port number when writing to network   \n"
     "\n"};
 
 static const struct option longopts[] = {
@@ -1231,7 +1231,7 @@ static const struct option longopts[] = {
     { "pid", required_argument, 0, 'p'},
     { "write", optional_argument, 0, 'w'},
     { "quota-size", required_argument, 0, 'q'},
-
+    { "port", required_argument, 0, 'p'},
 	{ 0, 0, 0, 0}
 };
 
@@ -1240,7 +1240,7 @@ static void print_usage(void)
     printf(usage, "trace_dumper");
 }
 
-static const char shortopts[] = "q:sw::p:hf:odb:n";
+static const char shortopts[] = "p:q:sw::p:hf:odb:n";
 
 #define DEFAULT_LOG_DIRECTORY "/mnt/logs"
 static void clear_mapped_records(struct trace_dumper_configuration_s *conf)
@@ -1287,6 +1287,9 @@ static int parse_commandline(struct trace_dumper_configuration_s *conf, int argc
         case 'w':
             conf->write_to_file = 1;
             conf->fixed_output_filename = optarg;
+            break;
+        case 'p':
+            conf->port = atoi(optarg);
             break;
         case 's':
             conf->syslog = 1;
