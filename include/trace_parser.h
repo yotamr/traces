@@ -43,6 +43,7 @@ struct trace_record_accumulator {
     char accumulated_data[MAX_ACCUMULATED_DATA];
     unsigned int data_offset;
     unsigned short int tid;
+    unsigned long long ts;
 };
 
 CREATE_LIST_PROTOTYPE(BufferParseContextList, struct trace_parser_buffer_context)

@@ -325,7 +325,7 @@ static struct trace_record_accumulator *get_accumulator(trace_parser_t *parser, 
     struct trace_record_accumulator *accumulator;
     for (i = 0; i < RecordsAccumulatorList__element_count(&parser->records_accumulators); i++) {
         RecordsAccumulatorList__get_element_ptr(&parser->records_accumulators, i, &accumulator);
-        if (accumulator->tid == rec->tid) {
+        if (accumulator->tid == rec->tid && accumulator->ts == rec->ts) {
             return accumulator;
         }
     }
@@ -339,7 +339,7 @@ static void free_accumulator(trace_parser_t *parser, struct trace_record *rec)
     struct trace_record_accumulator *accumulator;
     for (i = 0; i < RecordsAccumulatorList__element_count(&parser->records_accumulators); i++) {
         RecordsAccumulatorList__get_element_ptr(&parser->records_accumulators, i, &accumulator);
-        if (accumulator->tid == rec->tid) {
+        if (accumulator->tid == rec->tid && rec->ts == accumulator->ts) {
             RecordsAccumulatorList__remove_element(&parser->records_accumulators, i);
             return;
         }
@@ -356,16 +356,16 @@ static struct trace_record *accumulate_record(trace_parser_t *parser, struct tra
     if (NULL == accumulator) {
         if (!(rec->termination & TRACE_TERMINATION_FIRST)) {
             return NULL;
-        }
+        }        
 
         int rc = RecordsAccumulatorList__allocate_element(&parser->records_accumulators);
         if (0 != rc) {
             return NULL;
         }
-
         
         RecordsAccumulatorList__get_element_ptr(&parser->records_accumulators, RecordsAccumulatorList__last_element_index(&parser->records_accumulators), &accumulator);
         accumulator->tid = rec->tid;
+        accumulator->ts = rec->ts;
         accumulator->data_offset = TRACE_RECORD_HEADER_SIZE;
 
         memcpy(accumulator->accumulated_data, (char *) rec, TRACE_RECORD_HEADER_SIZE);
@@ -1323,6 +1323,7 @@ static int process_single_record(trace_parser_t *parser, struct trace_record_mat
                 handler(parser, TRACE_PARSER_COMPLETE_TYPED_RECORD_PROCESSED, &complete_rec, arg);
                 *complete_typed_record_found = 1;
             }
+
             free_accumulator(parser, complete_record);
         }
 
@@ -1365,7 +1366,6 @@ static bool_t inside_record_dump(trace_parser_t *parser)
 
     return FALSE;
 }
-
 
 static int read_smallest_ts_record(trace_parser_t *parser, struct trace_record *record)
 {
