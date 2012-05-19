@@ -426,7 +426,6 @@ static int map_buffer(struct trace_dumper_configuration_s *conf, pid_t pid)
     }
 
     dynamic_fd = open(full_dynamic_trace_filename, O_RDWR, 0);
-    printf("opened (1) %s\n", full_dynamic_trace_filename);
     if (dynamic_fd < 0) {
         ERROR("Unable to open dynamic buffer %s: %s", dynamic_trace_filename, strerror(errno));
         rc = -1;
@@ -434,7 +433,6 @@ static int map_buffer(struct trace_dumper_configuration_s *conf, pid_t pid)
     }
     
     static_fd = open(full_static_log_data_filename, O_RDWR, 0);
-    printf("opened (2) %s\n", full_static_log_data_filename);
     if (static_fd < 0) {
         ERROR("Unable to open static buffer: %s", strerror(errno));
         rc = -1;
