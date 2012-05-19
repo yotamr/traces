@@ -2426,6 +2426,7 @@ public:
         buildGlobalTraces();
         if (const RewriteBuffer *RewriteBuf =
             Rewrite.getRewriteBufferFor(MainFileID)) {
+            writeGlobalTraces(C);
             *OutFile << std::string(RewriteBuf->begin(), RewriteBuf->end());
             *OutFile << type_definition.str();
         } else {

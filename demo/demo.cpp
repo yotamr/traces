@@ -52,7 +52,7 @@ int main(void) {
         increment_twice(&value, 1, 2, 3, 4, 5, 6);
         DEBUG("Oh no");
         the_class_ptr.method();
-        WARN(some_str, 100, 150, 100, 100, 100, 100, some_str, 100, 150, 200, 500, 6710, 1021);
+        WARN(some_str, 100, 150, &the_class_ptr, 100, 100, 100, 100, some_str, 100, 150, 200, 500, 6710, 1021);
         value = calculate(CALCULATION_TYPE_DECREMENT, value);
         usleep(1000000);
     }
