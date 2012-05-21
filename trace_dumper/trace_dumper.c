@@ -20,6 +20,9 @@
 #include <syslog.h>
 #include <time.h>
 #include <sys/sysinfo.h>
+#include <sys/socket.h>
+#include <netinet/ip.h>
+#include <arpa/inet.h>
 
 #include "config.h"
 #include "list_template.h"
@@ -106,6 +109,8 @@ struct trace_record_file {
 
 enum operation_type {
     OPERATION_TYPE_DUMP_RECORDS,
+    OPERATION_TYPE_DUMP_RECORDS_FROM_NETWORK,
+
 };
 
 struct trace_dumper_configuration_s {
@@ -116,8 +121,17 @@ struct trace_dumper_configuration_s {
     unsigned int write_to_file;
     const char *fixed_output_filename;
     unsigned int online;
+    unsigned int receive_records;
     unsigned int debug_online;
     unsigned int syslog;
+    bool_t write_to_network;
+    bool_t wait_for_server;
+    bool_t dump_from_network;
+    int destination_socket;
+    int server_socket;
+    int client_socket;
+    struct sockaddr_in dest_address;
+    unsigned short port;
     unsigned long long start_time;
     int no_color;
     enum trace_severity minimal_allowed_severity;
@@ -265,22 +279,40 @@ static int trace_dumper_writev(int fd, const struct iovec *iov, int iovcnt)
     return bytes_written;
 }
 
+#define for_each_open_stream(conf, _i_, _fd_)                                \
+    int fds[] = {conf->record_file.fd, conf->destination_socket};                               \
+    for (({_i_ = 0; _fd_ = fds[_i_];}); _i_ < ARRAY_LENGTH(fds); ({_i_++; _fd_ = fds[_i_];})) 
+
+static int do_writev(int fd, const struct iovec *iov, int iovcnt)
+{
+    int rc;
+    int expected_bytes = total_iovec_len(iov, iovcnt);
+    if (iovcnt >= sysconf(_SC_IOV_MAX)) {
+        rc = trace_dumper_writev(fd, iov, iovcnt);
+    } else {
+        rc = writev(fd, iov, iovcnt);
+    }
+    
+    if (rc != expected_bytes) {
+        return -1;
+    }
+
+    return 0;
+}
+
 static int trace_dumper_write(struct trace_dumper_configuration_s *conf, struct trace_record_file *record_file, const struct iovec *iov, int iovcnt)
 {
     int expected_bytes = total_iovec_len(iov, iovcnt);
-    int rc = 0;
-    if (conf->record_file.fd >= 0) {
-        if (iovcnt >= sysconf(_SC_IOV_MAX)) {
-            rc = trace_dumper_writev(record_file->fd, iov, iovcnt);
-        } else {
-            rc = writev(record_file->fd, iov, iovcnt);
+    int i;
+    int fd;
+    
+    for_each_open_stream(conf, i, fd) {
+        if (fd >= 0) {
+            do_writev(fd, iov, iovcnt);
         }
-        
-        if (rc != expected_bytes) {
-            return -1;
-        }
-        record_file->records_written += expected_bytes / sizeof(struct trace_record);
     }
+    
+    record_file->records_written += expected_bytes / sizeof(struct trace_record);
 
     if (conf->online) {
         int parser_rc = dump_iovector_to_parser(conf, &conf->parser, iov, iovcnt);
@@ -860,7 +892,6 @@ static int trace_open_file(struct trace_dumper_configuration_s *conf, struct tra
 {
     unsigned long long now;
     char filename[0x100];
-    int rc;
 
     record_file->records_written = 0;
     now = trace_get_walltime() / 1000;
@@ -879,9 +910,56 @@ static int trace_open_file(struct trace_dumper_configuration_s *conf, struct tra
         return -1;
     }
 
-    rc = trace_write_header(conf);
     strncpy(record_file->filename, filename, sizeof(record_file->filename));
-    return rc;
+    return 0;
+}
+
+static int connect_to_remote_dumper(struct trace_dumper_configuration_s *conf)
+{
+    int fd;
+    int rc;
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    conf->dest_address.sin_port = htons(conf->port);
+
+    while (TRUE) {
+        rc = connect(fd, (struct sockaddr*) &conf->dest_address, sizeof(conf->dest_address));
+        if (0 != rc) {
+            if (!conf->wait_for_server) {
+                fprintf(stderr, "Unable to connect to destination (%s)\n", strerror(errno));
+                return -1;
+            } else {
+                sleep(1);
+            }
+        } else {
+            break;
+        }
+    }
+    
+    conf->destination_socket = fd;
+    return 0;
+}
+
+int trace_open_streams(struct trace_dumper_configuration_s *conf, struct trace_record_file *record_file, const char *filename_base)
+{
+    int rc;
+    if (conf->write_to_file) {
+        rc = trace_open_file(conf, record_file, filename_base);
+        if (0 != rc) {
+            return -1;
+        }
+    }
+
+    if (conf->write_to_network) {
+        rc = connect_to_remote_dumper(conf);
+        if (0 != rc) {
+            return -1;
+        }
+    }
+    
+    return trace_write_header(conf);
 }
 
 void calculate_delta(struct trace_mapped_records *mapped_records, unsigned int *delta, unsigned int *delta_a, unsigned int *delta_b)
@@ -1135,10 +1213,10 @@ static int rotate_trace_file_if_necessary(struct trace_dumper_configuration_s *c
     return 0;
 }
 
-static int open_trace_file_if_necessary(struct trace_dumper_configuration_s *conf)
+static int start_trace_stream_if_necessary(struct trace_dumper_configuration_s *conf)
 {
-    if (conf->write_to_file && conf->record_file.fd < 0) {
-        int rc = trace_open_file(conf, &conf->record_file, conf->logs_base);
+    if ((conf->write_to_file && conf->record_file.fd < 0) || (conf->write_to_network && conf->destination_socket < 0)) {
+        int rc = trace_open_streams(conf, &conf->record_file, conf->logs_base);
         if (0 != rc) {
             ERROR("Unable to open trace file");
             return -1;
@@ -1187,7 +1265,7 @@ static int dump_records(struct trace_dumper_configuration_s *conf)
             return -1;
         }
 
-        rc = open_trace_file_if_necessary(conf);
+        rc = start_trace_stream_if_necessary(conf);
         if (rc != 0) {
             return -1;
         }
@@ -1226,14 +1304,124 @@ static int op_dump_records(struct trace_dumper_configuration_s *conf)
     }
     conf->start_time = trace_get_walltime();
     return dump_records(conf);
-
 }
+
+#define BACKLOG (5)
+
+static int open_server_socket(struct trace_dumper_configuration_s *conf)
+{
+    int fd;
+    int rc;
+    struct sockaddr_in server_address;
+
+    server_address.sin_addr.s_addr = htonl(INADDR_ANY);
+    server_address.sin_family = AF_INET;
+    server_address.sin_port = htons(conf->port);
+    
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return -1;
+    }
+
+    rc = bind(fd, (const struct sockaddr *) &server_address, sizeof(server_address));
+    if (0 != rc) {
+        return -1;
+    }
+    
+    rc = listen(fd, BACKLOG);
+    if (0 != rc) {
+        return -1;
+    }
+
+    conf->server_socket = fd;
+    return 0;
+}
+
+static int wait_for_incoming_connection(struct trace_dumper_configuration_s *conf)
+{
+    int fd;
+    struct sockaddr_in client_addr;
+    socklen_t addr_size;
+    fd = accept(conf->server_socket, (struct sockaddr *) &client_addr, &addr_size);
+    if (fd < 0) {
+        return -1;
+    }
+
+    conf->client_socket = fd;
+    return 0;
+}
+
+static void close_client_socket(struct trace_dumper_configuration_s *conf)
+{
+    close(conf->client_socket);
+    conf->client_socket = -1;
+}
+
+#define READ_SIZE 8092
+static int receive_records_from_network(struct trace_dumper_configuration_s *conf)
+{
+    int rc;
+    char read_buffer[READ_SIZE];
+    struct iovec iov;
+    while (TRUE) {
+        rc = recv(conf->client_socket, read_buffer, sizeof(read_buffer), 0);
+        if (0 == rc) {
+            close_record_file(conf);
+            close_client_socket(conf);
+            return 0;
+        }
+
+        if (rc < 0) {
+            return -1;
+        }
+
+        iov.iov_len = rc;
+        iov.iov_base = read_buffer;
+        rc = trace_dumper_write(conf, &conf->record_file, &iov, 1);
+        if (total_iovec_len(&iov, 1) != rc) {
+            return -1;
+        }
+
+        rc = rotate_trace_file_if_necessary(conf);
+    }
+
+    return 0;
+}
+
+static int op_dump_records_from_network(struct trace_dumper_configuration_s *conf)
+{
+    int rc = open_server_socket(conf);
+    if (0 != rc) {
+        return -1;
+    }
+
+    while (TRUE) {
+        rc = wait_for_incoming_connection(conf);
+        if (0 != rc) {
+            return -1;
+        }
+
+        rc = trace_open_streams(conf, &conf->record_file, conf->logs_base);
+        if (0 != rc) {
+            return -1;
+        }
+
+        rc = receive_records_from_network(conf);
+        if (0 != rc) {
+            return -1;
+        }
+    }
+}
+
 static int run_dumper(struct trace_dumper_configuration_s *conf)
 {
     switch (conf->op_type) {
     case OPERATION_TYPE_DUMP_RECORDS:
         return op_dump_records(conf);
-        break; 
+        break;
+    case OPERATION_TYPE_DUMP_RECORDS_FROM_NETWORK:
+        return op_dump_records_from_network(conf);
+        break;
     default:
         break;
     }
@@ -1248,13 +1436,16 @@ static const char usage[] = {
     " -h, --help                            Display this help message                                              \n" \
     " -f  --filter [buffer_name]            Filter out specified buffer name                                       \n" \
     " -o  --online                          Show data from buffers as it arrives (slows performance)               \n" \
-    " -w  --write-to-file[filename]         Write log records to file                                              \n" \
+    " -w  --write[filename]                 Write log records to file/network                                      \n" \
+    " -a  --wait-for-server                 Start dumping records only when remote server becomes available        \n" \
     " -b  --logdir                          Specify the base log directory trace files are written to              \n" \
     " -p  --pid [pid]                       Attach the specified process                                           \n" \
     " -d  --debug-online                    Display DEBUG records in online mode                                   \n" \
     " -s  --syslog                          In online mode, write the entries to syslog instead of displaying them \n" \
     " -q  --quota-size [bytes/percent]      Specify the total number of bytes that may be taken up by trace files  \n"
     " -r  --record-write-limit [records]    Specify maximal amount of records that can be written per-second (unlimited if not specified)  \n"
+    " -t  --port [port]                     Specify a destination port number when writing to network              \n" \
+    " -c  --receive [port]                  Receive records from a remote trace_dumper                             \n" \
     "\n"};
 
 static const struct option longopts[] = {
@@ -1269,7 +1460,8 @@ static const struct option longopts[] = {
     { "write", optional_argument, 0, 'w'},
     { "quota-size", required_argument, 0, 'q'},
     { "record-write-limit", required_argument, 0, 'r'},
-
+    { "port", required_argument, 0, 't'},
+    { "wait-for-server", required_argument, 0, 'a'},
 	{ 0, 0, 0, 0}
 };
 
@@ -1278,9 +1470,11 @@ static void print_usage(void)
     printf(usage, "trace_dumper");
 }
 
-static const char shortopts[] = "r:q:sw::p:hf:odb:n";
+static const char shortopts[] = "tacr:q:sw::p:hf:odb:n";
 
 #define DEFAULT_LOG_DIRECTORY "/mnt/logs"
+#define DEFAULT_WRITE_PORT 5869
+
 static void clear_mapped_records(struct trace_dumper_configuration_s *conf)
 {
     MappedBuffers__init(&conf->mapped_buffers);
@@ -1295,6 +1489,25 @@ static void add_buffer_filter(struct trace_dumper_configuration_s *conf, char *b
     if (0 != BufferFilter__add_element(&conf->filtered_buffers, &filter)) {
         ERROR("Can't add buffer", buffer_name,  "to filter list");
     }
+}
+
+static void handle_record_output_arg(struct trace_dumper_configuration_s *conf, char *optarg)
+{
+    struct in_addr addr;
+    int rc = inet_pton(AF_INET, optarg, &addr);
+    if (1 == rc) {
+        conf->write_to_network = TRUE;
+        if (!conf->port) {
+            memcpy(&conf->dest_address.sin_addr, &addr, sizeof(conf->dest_address.sin_addr));
+            conf->dest_address.sin_family = AF_INET;
+            conf->port = DEFAULT_WRITE_PORT;
+        }
+
+        return;
+    }
+
+    conf->fixed_output_filename = optarg;
+    conf->write_to_file = TRUE;
 }
 
 static int parse_commandline(struct trace_dumper_configuration_s *conf, int argc, char **argv)
@@ -1323,8 +1536,17 @@ static int parse_commandline(struct trace_dumper_configuration_s *conf, int argc
             conf->attach_to_pid = optarg;
             break;
         case 'w':
-            conf->write_to_file = 1;
-            conf->fixed_output_filename = optarg;
+            handle_record_output_arg(conf, optarg);
+            break;
+        case 'c':
+            conf->dump_from_network = TRUE;
+            conf->port = DEFAULT_WRITE_PORT;
+            break;
+        case 'a':
+            conf->wait_for_server = TRUE;
+            break;
+        case 't':
+            conf->port = atoi(optarg);
             break;
         case 's':
             conf->syslog = 1;
@@ -1408,10 +1630,15 @@ static int set_quota(struct trace_dumper_configuration_s *conf)
 static int init_dumper(struct trace_dumper_configuration_s *conf)
 {
     clear_mapped_records(conf);
-    
-    conf->op_type = OPERATION_TYPE_DUMP_RECORDS;
+
+    if (conf->dump_from_network) {
+        conf->op_type = OPERATION_TYPE_DUMP_RECORDS_FROM_NETWORK;
+    } else {
+        conf->op_type = OPERATION_TYPE_DUMP_RECORDS;
+    }
     conf->logs_base = DEFAULT_LOG_DIRECTORY;
     conf->record_file.fd = -1;
+    conf->destination_socket = -1;
     conf->ts_flush_delta = FLUSH_DELTA;
     TRACE_PARSER__from_external_stream(&conf->parser, parser_event_handler, NULL);
     TRACE_PARSER__set_indent(&conf->parser, TRUE);
@@ -1499,7 +1726,7 @@ int main(int argc, char **argv)
     }
     
     set_signal_handling();
-    if (!conf->write_to_file && !conf->online) {
+    if (!conf->write_to_file && !conf->online && !conf->write_to_network && !conf->dump_from_network) {
         fprintf(stderr, "Must specify either -w or -o\n");
         print_usage();
         return 1;
