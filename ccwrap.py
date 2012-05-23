@@ -20,7 +20,7 @@ import re
 import subprocess
 
 from ldwrap import main as ldmodwrap_main
-plugin_path = os.getenv('TRACE_INSTRUMENTOR', "/home/yotam/Code/traces/trace_instrumentor/trace_instrumentor.so")
+plugin_path = os.getenv('TRACE_INSTRUMENTOR', os.path.join(os.path.dirname(sys.argv[0]), "trace_instrumentor/trace_instrumentor.so"))
 clang_path = os.getenv('TRACE_CLANG_PATH', "clang")
 
 def spawn(args):
