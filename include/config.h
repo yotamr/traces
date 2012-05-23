@@ -1,7 +1,7 @@
 #ifndef _CONFIG_H_
 #define _CONFIG_H_
 
-#define SHM_PATH "/dev/"
+#define SHM_PATH "/dev/shm"
 #define TRACE_SHM_ID "_trace_shm_"    
 
 #ifndef TRACE_RECORD_BUFFER_RECS

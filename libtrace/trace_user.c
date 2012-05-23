@@ -338,7 +338,7 @@ static void TRACE__init(void)
 }
 
 
-#define SHM_DIR "/dev/"
+#define SHM_DIR "/dev/shm/"
 
 static int delete_shm_files(unsigned short pid)
 {
