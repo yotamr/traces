@@ -238,6 +238,11 @@ bool TraceParam::parseEnumTypeParam(QualType qual_type) {
     if (!qual_type.split().first->isEnumeralType()) {
         return false;
     }
+
+    const EnumType *enum_type = qual_type->getAs<EnumType>();
+    if (!enum_type->getDecl()->getIdentifier()) {
+        return false;
+    }
     
     referenceType(qual_type.split().first);
     flags |= TRACE_PARAM_FLAG_ENUM;
@@ -779,7 +784,9 @@ enum trace_severity TraceCall::functionNameToTraceSeverity(std::string function_
 
 bool TraceParam::fromType(QualType type, bool fill_unknown_type) {
     QualType canonical_type = type.getCanonicalType();
-    if (parseBasicTypeParam(canonical_type)) {
+    if (parseEnumTypeParam(canonical_type)) {
+        return true;
+    } else if (parseBasicTypeParam(canonical_type)) {
         return true;
     }
 
@@ -796,6 +803,8 @@ bool TraceParam::fromExpr(const Expr *trace_param, bool deref_pointer)
     if (deref_pointer && parseStringParam(trace_param)) {
         return true; 
     } else if (parseHexBufParam(trace_param)) {
+        return true;
+    } else if (parseEnumTypeParam(trace_param)) {
         return true;
     } else if (deref_pointer && parseRecordTypeParam(trace_param)) {
         return true;

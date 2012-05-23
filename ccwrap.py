@@ -35,6 +35,7 @@ def translate(pp_file, out_pp_file, language, cflags):
     else:
         args = [clang_path, "-cc1", "-w", "-Wno-attributes", "-fcolor-diagnostics", "-triple", "armv7-unknown-linux-gnueabi", "-fsyntax-only", "-fgnu-keywords", "-std=gnu99", pp_file, "-o", out_pp_file]
 
+    print ' '.join(cflags)
     args.extend(cflags)
     args.extend(["-load", plugin_path, "-plugin", "trace-instrument"])
     try:
