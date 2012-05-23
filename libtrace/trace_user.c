@@ -338,8 +338,6 @@ static void TRACE__init(void)
 }
 
 
-#define SHM_DIR "/dev/shm/"
-
 static int delete_shm_files(unsigned short pid)
 {
     char dynamic_trace_filename[0x100];
@@ -349,8 +347,8 @@ static int delete_shm_files(unsigned short pid)
     int rc;
     snprintf(dynamic_trace_filename, sizeof(dynamic_trace_filename), "_trace_shm_%d_dynamic_trace_data", pid);
     snprintf(static_log_data_filename, sizeof(static_log_data_filename), "_trace_shm_%d_static_trace_metadata", pid);
-    snprintf(full_dynamic_trace_filename, sizeof(full_dynamic_trace_filename), "%s/%s", SHM_DIR, dynamic_trace_filename);
-    snprintf(full_static_log_data_filename, sizeof(full_static_log_data_filename), "%s/%s", SHM_DIR, static_log_data_filename);
+    snprintf(full_dynamic_trace_filename, sizeof(full_dynamic_trace_filename), "%s/%s", SHM_PATH, dynamic_trace_filename);
+    snprintf(full_static_log_data_filename, sizeof(full_static_log_data_filename), "%s/%s", SHM_PATH, static_log_data_filename);
 
     rc = unlink(full_dynamic_trace_filename);
     rc |= unlink(full_static_log_data_filename);
