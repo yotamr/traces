@@ -36,7 +36,6 @@ def translate(pp_file, out_pp_file, language, arch_triplet, cflags):
         args = [clang_path, "-cc1", "-w", "-Wno-attributes", "-fcolor-diagnostics", "-fsyntax-only", "-fgnu-keywords", "-std=gnu99", pp_file, "-o", out_pp_file]
 
     args.extend(arch_triplet)
-    print ' '.join(cflags)
     args.extend(cflags)
     args.extend(["-load", plugin_path, "-plugin", "trace-instrument"])
     try:
@@ -156,13 +155,11 @@ def main():
         ret = spawn(comp_args)
         return ret;
     finally:
-        pass
-        #os.unlink(pp_file)
+        os.unlink(pp_file)
         if os.getenv("TRACE_NO_UNLINK_PPFILE", "") == "":
             # Delete the pp.i file only if the clang invocation was successful
             if clang_ret == 0:
-                pass
-               #os.unlink(out_pp_file)
+               os.unlink(out_pp_file)
 
 if __name__ == "__main__":
     sys.exit(main())

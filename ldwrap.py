@@ -183,13 +183,11 @@ def main():
     f.close()
 
     set_linker_script_filename(linker_direct, script_file, xargs)
-    print ' '.join(xargs)
     try:
         ret = spawn(xargs)
         return ret
     finally:
-        pass
-        #os.unlink(script_file)
+        os.unlink(script_file)
 
 
 if __name__ == "__main__":
