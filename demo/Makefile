@@ -8,10 +8,8 @@ LD=$(LDWRAP) ld
 LDFLAGS=-L$(TRACES_ROOT_DIR)
 all: demo
 
-traced_so: traced_so.o
-	$(CCWRAP) g++ -fPIC -shared traced_so.o -o libtraced.so
-demo: demo.o traced_so
-	$(CCWRAP) g++ $(LDFLAGS) demo.o ../libtraceuser.a -lrt -L. -ltraced -o demo
+demo: demo.o
+	$(CCWRAP) g++ $(LDFLAGS) demo.o ../libtraceuser.a -lrt -L. -o demo
 
 clean:
 	rm demo.o demo

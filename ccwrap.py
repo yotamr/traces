@@ -29,12 +29,13 @@ def spawn(args):
 class Error(Exception):
     pass
 
-def translate(pp_file, out_pp_file, language, cflags):
+def translate(pp_file, out_pp_file, language, arch_triplet, cflags):
     if language == 'c++':
-        args = [clang_path, "-cc1", "-w", "-Wno-attributes", "-fcolor-diagnostics", "-triple", "armv7-unknown-linux-gnueabi", "-fsyntax-only", "-fgnu-keywords", "-x", "c++", "-fcxx-exceptions", pp_file, "-o", out_pp_file]
+        args = [clang_path, "-cc1", "-w", "-Wno-attributes", "-fcolor-diagnostics", "-fsyntax-only", "-fgnu-keywords", "-x", "c++", "-fcxx-exceptions", pp_file, "-o", out_pp_file]
     else:
-        args = [clang_path, "-cc1", "-w", "-Wno-attributes", "-fcolor-diagnostics", "-triple", "armv7-unknown-linux-gnueabi", "-fsyntax-only", "-fgnu-keywords", "-std=gnu99", pp_file, "-o", out_pp_file]
+        args = [clang_path, "-cc1", "-w", "-Wno-attributes", "-fcolor-diagnostics", "-fsyntax-only", "-fgnu-keywords", "-std=gnu99", pp_file, "-o", out_pp_file]
 
+    args.extend(arch_triplet)
     print ' '.join(cflags)
     args.extend(cflags)
     args.extend(["-load", plugin_path, "-plugin", "trace-instrument"])
@@ -48,9 +49,27 @@ def translate(pp_file, out_pp_file, language, cflags):
     
     return 0
 
-def maybe_translate(pp_file, out_pp_file, language, cflags):
+
+class UnsupportedTarget(Exception):
+    pass
+
+def get_arch_triplet(compiler):
+    output = subprocess.check_output([compiler, '-v'], stderr = subprocess.STDOUT).split('\n')
+    for line in output:
+        if line.startswith('Target:'):
+            target = line.split(':')[1].strip()
+            if target.startswith('arm'):
+                return ['-triple', 'armv7-unknown-linux-gnueabi']
+            elif target.startswith('x86'):
+                return []
+            else:
+                raise UnsupportedTarget(target)
+
+    raise UnsupportedTarget()
+    
+def maybe_translate(pp_file, out_pp_file, language, arch_triplet, cflags):
     try:
-        return translate(pp_file, out_pp_file, language, cflags)
+        return translate(pp_file, out_pp_file, language, arch_triplet, cflags)
     except Error, e:
         print e.args[0]
         return -1
@@ -67,7 +86,8 @@ def get_cflags(args):
                 cflags.append(arg)
 
     return cflags
-    
+
+
 def main():
     args = sys.argv[1:]
     if '-c' not in args:
@@ -86,7 +106,8 @@ def main():
     cpp_args = list(args)
     cpp_args[args.index('-c')] = '-E'
     c_file = args[c_index]
-    if 'ANDROID_SINGLETON_STATIC_INSTANCE' in file(c_file).read():
+    source_data = file(c_file).read()
+    if 'ANDROID_SINGLETON_STATIC_INSTANCE' in source_data:
         return spawn(args)
 
     cflags = get_cflags(args)
@@ -107,7 +128,7 @@ def main():
         cpp_args[o_index] = pp_file
 
     # Hack for dealing with sources that use _GNU_SOURCE
-    if '#define _GNU_SOURCE' in file(c_file).read():
+    if '#define _GNU_SOURCE' in source_data:
         cpp_args.extend(["-w", "-D", "_GNU_SOURCE"])
         
     cpp_args.extend(["-D", "__TRACE_INSTRUMENTATION"])
@@ -120,15 +141,10 @@ def main():
         return ret
     clang_ret = 0;
 
-    # new_cpp = file(pp_file).read().replace('typedef unsigned int size_t;', 'typedef unsigned long size_t;')
-    # file(pp_file, "wb").write(new_cpp)
     try:
-        clang_ret = maybe_translate(pp_file, out_pp_file, language, cflags)
+        clang_ret = maybe_translate(pp_file, out_pp_file, language, get_arch_triplet(args[0]), cflags)
         if clang_ret != 0:
             return -1
-
-        # new_cpp = file(out_pp_file).read().replace('typedef unsigned long size_t;', 'typedef unsigned int size_t;')
-        # file(out_pp_file, "wb").write(new_cpp)
 
         comp_args = []
         comp_args.extend(list(args))
