@@ -240,6 +240,11 @@ bool TraceParam::parseEnumTypeParam(QualType qual_type) {
     if (!qual_type.split().first->isEnumeralType()) {
         return false;
     }
+
+    const EnumType *enum_type = qual_type->getAs<EnumType>();
+    if (!enum_type->getDecl()->getIdentifier()) {
+        return false;
+    }
     
     referenceType(qual_type.split().first);
     flags |= TRACE_PARAM_FLAG_ENUM;

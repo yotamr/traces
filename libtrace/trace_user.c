@@ -30,11 +30,10 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 #include "macros.h"
 #include "trace_lib.h"
 #include "trace_user.h"
-
 #include "halt.h"
 
 struct trace_buffer *current_trace_buffer = NULL;
-__thread unsigned short trace_current_nesting;
+static __thread unsigned long long trace_current_nesting;
 
 #define ALLOC_STRING(dest, source)                      \
     do {                                                \
@@ -339,7 +338,7 @@ static void TRACE__init(void)
 }
 
 
-#define SHM_DIR "/dev/shm"
+#define SHM_DIR "/dev/shm/"
 
 static int delete_shm_files(unsigned short pid)
 {

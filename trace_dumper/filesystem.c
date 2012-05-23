@@ -1,7 +1,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <sys/statvfs.h>
+#include <sys/vfs.h>
 
 long long get_file_size(const char *filename)
 {
@@ -17,8 +17,8 @@ long long get_file_size(const char *filename)
 
 long long free_bytes_in_fs(const char *mnt)
 {
-    struct statvfs vfs;
-    int rc = statvfs(mnt, &vfs);
+    struct statfs vfs;
+    int rc = statfs(mnt, &vfs);
     if (0 != rc) {
         return -1;
     }
