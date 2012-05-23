@@ -1391,7 +1391,7 @@ static int receive_records_from_network(struct trace_dumper_configuration_s *con
     struct iovec iov;
     while (TRUE) {
         rc = recv(conf->remote_dumper_socket, read_buffer, sizeof(read_buffer), 0);
-        if (0 == rc) {
+        if (0 == rc || (rc < 0 && errno == ECONNRESET)) {
             close_record_file(conf);
             close_remote_dumper_socket(conf);
             return 0;
@@ -1418,7 +1418,7 @@ static int op_dump_records_from_network(struct trace_dumper_configuration_s *con
 {
     int rc;
 
-    if (!conf->remote_address_specified) {
+    if (!conf->remote_address_specified && conf->passive_network_dumping) {
         fprintf(stderr, "Must specify remote address using -w\n");
         return -1;
     }
