@@ -161,7 +161,6 @@ def set_linker_script_filename(linker_direct, linker_script, xargs):
      
 def main():
     args = sys.argv[1:]
-    print ' '.join(args)
     linker_direct = True
     if 'gcc' in args[0] or 'g++' in args[0]:
         linker_direct = False
