@@ -5,7 +5,7 @@
 #define TRACE_SHM_ID "_trace_shm_"    
 
 #ifndef TRACE_RECORD_BUFFER_RECS
-#ifndef ANDROID
+#ifdef ANDROID
 #define TRACE_RECORD_BUFFER_RECS  0x10000
 #else
 #define TRACE_RECORD_BUFFER_RECS  0x100000
