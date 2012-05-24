@@ -256,6 +256,12 @@ static int total_iovec_len(const struct iovec *iov, int iovcnt)
     return total;
 }
 
+static inline void *__mempcpy (void * __dest, const void * __src, size_t __n)
+{
+	memcpy(__dest, __src, __n);
+	return ((char *)__dest) + __n;
+}
+
 static int trace_dumper_writev(int fd, const struct iovec *iov, int iovcnt)
 {
     int length = total_iovec_len(iov, iovcnt);
@@ -266,7 +272,7 @@ static int trace_dumper_writev(int fd, const struct iovec *iov, int iovcnt)
     for (i = 0; i < iovcnt; ++i)
     {
         size_t copy = MIN(iov[i].iov_len, to_copy);
-        tmp_buffer = mempcpy((void *) tmp_buffer, (void *) iov[i].iov_base, copy);
+        tmp_buffer = __mempcpy((void *) tmp_buffer, (void *) iov[i].iov_base, copy);
 
         to_copy -= copy;
         if (to_copy == 0) {
@@ -303,7 +309,7 @@ static int do_writev(int fd, const struct iovec *iov, int iovcnt)
 static int trace_dumper_write(struct trace_dumper_configuration_s *conf, struct trace_record_file *record_file, const struct iovec *iov, int iovcnt)
 {
     int expected_bytes = total_iovec_len(iov, iovcnt);
-    int i;
+    unsigned int i;
     int fd;
     
     for_each_open_stream(conf, i, fd) {
@@ -913,7 +919,7 @@ int acceptor(int server_fd, struct sockaddr *addr, socklen_t *address_size)
     return accept(server_fd, addr, address_size);
 }
 
-static const connection_establisher_t get_establisher(struct trace_dumper_configuration_s *conf)
+static connection_establisher_t get_establisher(struct trace_dumper_configuration_s *conf)
 {
     connection_establisher_t establisher;
     if (conf->passive_network_dumping) {

@@ -58,7 +58,7 @@ static inline unsigned short int trace_get_pid(void)
     static __thread int pid_cache = 0;
     if (pid_cache)
 		return pid_cache;
-	pid_cache = syscall(__NR_getpid);
+	return syscall(__NR_getpid);
 	return pid_cache;
 }
     
@@ -67,7 +67,7 @@ static inline unsigned short int trace_get_tid(void)
     static __thread int tid_cache = 0;
     if (tid_cache)
 		return tid_cache;
-	tid_cache = syscall(__NR_gettid);
+	return syscall(__NR_gettid);
 	return tid_cache;
 }
     
