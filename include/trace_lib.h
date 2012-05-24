@@ -56,23 +56,39 @@ extern struct trace_type_definition *__type_information_start;
 static __thread unsigned long long trace_current_nesting; 
 #endif
 
+#ifdef ANDROID    
+static inline unsigned short int trace_get_pid(void)
+{
+	return syscall(__NR_getpid);
+}
+#else    
 static inline unsigned short int trace_get_pid(void)
 {
     static __thread int pid_cache = 0;
     if (pid_cache)
 		return pid_cache;
-	return syscall(__NR_getpid);
+    
+	pid_cache = syscall(__NR_getpid);
 	return pid_cache;
 }
-    
+#endif    
+
+#ifdef ANDROID    
+static inline unsigned short int trace_get_tid(void)
+{
+	return syscall(__NR_gettid);
+}
+#else    
 static inline unsigned short int trace_get_tid(void)
 {
     static __thread int tid_cache = 0;
     if (tid_cache)
 		return tid_cache;
-	return syscall(__NR_gettid);
+    
+	tid_cache = syscall(__NR_gettid);
 	return tid_cache;
 }
+#endif    
     
 static inline unsigned long long trace_get_nsec(void)
 {

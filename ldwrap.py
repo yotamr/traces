@@ -187,8 +187,7 @@ def main():
         ret = spawn(xargs)
         return ret
     finally:
-        pass
-        #os.unlink(script_file)
+        os.unlink(script_file)
 
 
 if __name__ == "__main__":
