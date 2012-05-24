@@ -256,7 +256,7 @@ static int total_iovec_len(const struct iovec *iov, int iovcnt)
     return total;
 }
 
-static inline void *__mempcpy (void * __dest, const void * __src, size_t __n)
+static inline void *___mempcpy (void * __dest, const void * __src, size_t __n)
 {
 	memcpy(__dest, __src, __n);
 	return ((char *)__dest) + __n;
@@ -272,7 +272,7 @@ static int trace_dumper_writev(int fd, const struct iovec *iov, int iovcnt)
     for (i = 0; i < iovcnt; ++i)
     {
         size_t copy = MIN(iov[i].iov_len, to_copy);
-        tmp_buffer = __mempcpy((void *) tmp_buffer, (void *) iov[i].iov_base, copy);
+        tmp_buffer = ___mempcpy((void *) tmp_buffer, (void *) iov[i].iov_base, copy);
 
         to_copy -= copy;
         if (to_copy == 0) {
@@ -574,7 +574,7 @@ static int map_buffer(struct trace_dumper_configuration_s *conf, pid_t pid)
         if (dead) {
             mapped_records->current_read_record = 0;
         } else {
-            mapped_records->current_read_record = mapped_records->mutab->current_record & mapped_records->imutab->max_records_mask;
+            mapped_records->current_read_record = 0; //mapped_records->mutab->current_record & mapped_records->imutab->max_records_mask;
         }
     }
 
