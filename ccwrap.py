@@ -86,7 +86,24 @@ def get_cflags(args):
 
     return cflags
 
-
+def handle_dependency_option(args, c_index, o_index, o_file):
+    new_args = args[::]
+    uses_dependency_option = False
+    arg_mapping = {'-MMD' : '-MM',
+                   '-MD'  : '-M'}
+    for index, arg in enumerate(new_args):
+        if arg in arg_mapping.keys():
+            del args[index]
+            uses_dependency_option = True
+            new_args[index] = arg_mapping[arg]
+            break
+            
+    if o_index:
+        new_args[o_index] = os.path.splitext(o_file)[0] + '.d'
+        
+    if uses_dependency_option:
+        spawn(new_args)
+    
 def main():
     args = sys.argv[1:]
     if '-c' not in args:
@@ -94,7 +111,7 @@ def main():
 
     c_index = -1
     for i, p in enumerate(args):
-        if p.endswith('.c') or p.endswith("cpp"):
+        if p.endswith('.c') or p.endswith('cpp'):
             c_index = i
             break
 
@@ -104,17 +121,7 @@ def main():
 
     cpp_args = list(args)
     cpp_args[args.index('-c')] = '-E'
-    c_file = args[c_index]
-    source_data = file(c_file).read()
-    if 'ANDROID_SINGLETON_STATIC_INSTANCE' in source_data:
-        return spawn(args)
-
-    cflags = get_cflags(args)
-    if p.endswith('cpp'):
-        language = 'c++'
-    else:
-        language = 'c'
-
+    o_index = None
     if '-o' not in args:
         o_file = c_file + '.o'
         pp_file = o_file + '.pp'
@@ -126,9 +133,22 @@ def main():
         pp_file = o_file + '.pp'
         cpp_args[o_index] = pp_file
 
+    handle_dependency_option(cpp_args, c_index, o_index, o_file)    
+    c_file = args[c_index]
+    source_data = file(c_file).read()
+    if 'ANDROID_SINGLETON_STATIC_INSTANCE' in source_data:
+        return spawn(args)
+
     # Hack for dealing with sources that use _GNU_SOURCE
     if '#define _GNU_SOURCE' in source_data:
         cpp_args.extend(["-w", "-D", "_GNU_SOURCE"])
+        
+    cflags = get_cflags(args)
+    if p.endswith('cpp'):
+        language = 'c++'
+    else:
+        language = 'c'
+
         
     cpp_args.extend(["-D", "__TRACE_INSTRUMENTATION"])
     cpp_args.extend(["-include", os.path.join(os.path.dirname(sys.argv[0]),  "include/trace_lib.h")])
