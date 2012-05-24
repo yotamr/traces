@@ -33,7 +33,10 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 #include "halt.h"
 
 struct trace_buffer *current_trace_buffer = NULL;
-static __thread unsigned long long trace_current_nesting;
+
+#ifndef ANDROID
+static __thread unsigned long long trace_current_nesting = 0;
+#endif
 
 #define ALLOC_STRING(dest, source)                      \
     do {                                                \

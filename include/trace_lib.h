@@ -51,7 +51,10 @@ extern struct trace_buffer *current_trace_buffer;
 extern struct trace_log_descriptor __static_log_information_start;
 extern struct trace_log_descriptor __static_log_information_end;
 extern struct trace_type_definition *__type_information_start;
+
+#ifndef ANDROID    
 static __thread unsigned long long trace_current_nesting; 
+#endif
 
 static inline unsigned short int trace_get_pid(void)
 {
@@ -78,20 +81,40 @@ static inline unsigned long long trace_get_nsec(void)
      return ((unsigned long long) tv.tv_sec * 1000000000) + tv.tv_nsec;
 }
 
+#ifndef ANDROID    
 static inline void trace_increment_nesting_level(void)
 {
     trace_current_nesting++;
 }
+#else
+static inline void trace_increment_nesting_level(void)
+{
+}
+#endif    
 
+#ifndef ANDROID    
 static inline void trace_decrement_nesting_level(void)
 {
     trace_current_nesting--;
 }
+#else
+static inline void trace_decrement_nesting_level(void)
+{
+}
+#endif    
 
+#ifndef ANDROID    
 static inline unsigned short trace_get_nesting_level(void)
 {
     return trace_current_nesting;
 }
+#else
+static inline unsigned short trace_get_nesting_level(void)
+{
+    return 0;
+}
+#endif    
+    
     
 #define trace_atomic_t int
 
