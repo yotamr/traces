@@ -56,11 +56,20 @@ extern struct trace_type_definition *__type_information_start;
 extern __thread unsigned short trace_current_nesting;
 #else
 extern pthread_key_t nesting_key;
+extern pthread_key_t pid_cache_key;
+extern pthread_key_t tid_cache_key;
 #endif    
 #ifdef ANDROID    
 static inline unsigned short int trace_get_pid(void)
 {
-	return syscall(__NR_getpid);
+    int *pid = (int *) pthread_getspecific(pid_cache_key);
+    if (pid == NULL) {
+        pid = (int *) malloc(sizeof(int));
+        *pid = syscall(__NR_getpid);
+        pthread_setspecific(pid_cache_key, pid);
+    }
+
+    return *pid;
 }
 #else    
 static inline unsigned short int trace_get_pid(void)
@@ -77,7 +86,14 @@ static inline unsigned short int trace_get_pid(void)
 #ifdef ANDROID    
 static inline unsigned short int trace_get_tid(void)
 {
-	return syscall(__NR_gettid);
+    int *tid = (int *) pthread_getspecific(tid_cache_key);
+    if (tid == NULL) {
+        tid = (int *) malloc(sizeof(int));
+        *tid = syscall(__NR_gettid);
+        pthread_setspecific(tid_cache_key, tid);
+    }
+
+    return *tid;
 }
 #else    
 static inline unsigned short int trace_get_tid(void)

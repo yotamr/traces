@@ -39,6 +39,8 @@ struct trace_buffer *current_trace_buffer = NULL;
 __thread unsigned short trace_current_nesting;
 #else
 pthread_key_t nesting_key;
+pthread_key_t tid_cache_key;
+pthread_key_t pid_cache_key;
 #endif
 
 #define ALLOC_STRING(dest, source)                      \
@@ -343,6 +345,8 @@ static void TRACE__init(void)
     TRACE__register_buffer(buffer_name);
     #ifdef ANDROID
     pthread_key_create(&nesting_key, NULL);
+    pthread_key_create(&tid_cache_key, NULL);
+    pthread_key_create(&pid_cache_key, NULL);
     #endif
 }
 
