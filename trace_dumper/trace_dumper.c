@@ -286,8 +286,9 @@ static int trace_dumper_writev(int fd, const struct iovec *iov, int iovcnt)
 }
 
 #define for_each_open_stream(conf, _i_, _fd_)                                \
-    int fds[] = {conf->record_file.fd, conf->remote_dumper_socket};                               \
-    for (({_i_ = 0; _fd_ = fds[_i_];}); _i_ < ARRAY_LENGTH(fds); ({_i_++; _fd_ = fds[_i_];})) 
+    int fds[2] = {conf->record_file.fd, -1};                                 \
+    if (conf->dump_to_network) { fds[1] = conf->remote_dumper_socket;};      \
+    for (({_i_ = 0; _fd_ = fds[_i_];}); _i_ < ARRAY_LENGTH(fds); ({_i_++; _fd_ = fds[_i_];}))  
 
 static int do_writev(int fd, const struct iovec *iov, int iovcnt)
 {
@@ -1454,6 +1455,7 @@ static const char usage[] = {
     " -f  --filter [buffer_name]            Filter out specified buffer name                                       \n" \
     " -o  --online                          Show data from buffers as it arrives (slows performance)               \n" \
     " -w  --write[filename]                 Write log records to file/network                                      \n" \
+    " -x  --remote-host [address]           Specify remote host for dumping                                        \n" \
     " -a  --wait-for-server                 Start dumping records only when remote server becomes available        \n" \
     " -b  --logdir                          Specify the base log directory trace files are written to              \n" \
     " -p  --pid [pid]                       Attach the specified process                                           \n" \
@@ -1476,6 +1478,7 @@ static const struct option longopts[] = {
     { "syslog", 0, 0, 's'},
     { "pid", required_argument, 0, 'p'},
     { "write", optional_argument, 0, 'w'},
+    { "remote-host", optional_argument, 0, 'x'},
     { "quota-size", required_argument, 0, 'q'},
     { "record-write-limit", required_argument, 0, 'r'},
     { "port", required_argument, 0, 't'},
@@ -1491,7 +1494,7 @@ static void print_usage(void)
     printf(usage, "trace_dumper");
 }
 
-static const char shortopts[] = "tiacr:q:sw::p:hf:odb:n";
+static const char shortopts[] = "x:tiacr:q:sw::p:hf:odb:n";
 
 #define DEFAULT_LOG_DIRECTORY "/mnt/logs"
 #define DEFAULT_WRITE_PORT 5869
@@ -1512,29 +1515,10 @@ static void add_buffer_filter(struct trace_dumper_configuration_s *conf, char *b
     }
 }
 
-static void handle_record_output_arg(struct trace_dumper_configuration_s *conf, char *optarg)
-{
-    struct in_addr addr;
-    int rc = inet_pton(AF_INET, optarg, &addr);
-    if (1 == rc) {
-        conf->remote_address_specified = TRUE;
-        if (!conf->dump_from_network) {
-            conf->dump_to_network = TRUE;
-        }
-        if (!conf->port) {
-            memcpy(&conf->remote_dumper_address.sin_addr, &addr, sizeof(conf->remote_dumper_address.sin_addr));
-            conf->remote_dumper_address.sin_family = AF_INET;
-        }
-
-        return;
-    }
-
-    conf->fixed_output_filename = optarg;
-    conf->write_to_file = TRUE;
-}
-
 static int parse_commandline(struct trace_dumper_configuration_s *conf, int argc, char **argv)
 {
+    int rc;
+    struct in_addr addr;
     int o;
     while ((o = getopt_long(argc, argv, shortopts, longopts, 0)) != EOF) {
 		switch (o) {
@@ -1559,7 +1543,22 @@ static int parse_commandline(struct trace_dumper_configuration_s *conf, int argc
             conf->attach_to_pid = optarg;
             break;
         case 'w':
-            handle_record_output_arg(conf, optarg);
+            conf->fixed_output_filename = optarg;
+            conf->write_to_file = TRUE;
+            break;
+        case 'x':
+            rc = inet_pton(AF_INET, optarg, &addr);
+            if (1 != rc) {
+                return -1;
+            }
+
+            conf->remote_address_specified = TRUE;
+            if (!conf->dump_from_network) {
+                conf->dump_to_network = TRUE;
+            }
+
+            memcpy(&conf->remote_dumper_address.sin_addr, &addr, sizeof(conf->remote_dumper_address.sin_addr));
+            conf->remote_dumper_address.sin_family = AF_INET;
             break;
         case 'c':
             conf->dump_from_network = TRUE;
