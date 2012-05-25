@@ -9,5 +9,6 @@ LOCAL_SRC_FILES := \
 	simple_trace_reader.c \
 
 LOCAL_C_INCLUDES := external/traces/include
-LOCAL_STATIC_LIBRARIES=libtrace_parser
+LOCAL_STATIC_LIBRARIES=libtrace_parser libcutils libc
+LOCAL_FORCE_STATIC_EXECUTABLE := true
 include $(BUILD_EXECUTABLE)
