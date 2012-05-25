@@ -1562,6 +1562,7 @@ static int parse_commandline(struct trace_dumper_configuration_s *conf, int argc
             break;
         case 'c':
             conf->dump_from_network = TRUE;
+            conf->dump_to_network = FALSE;
             break;
         case 'a':
             conf->wait_for_remote_dumper = TRUE;
