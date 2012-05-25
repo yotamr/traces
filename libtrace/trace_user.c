@@ -25,6 +25,7 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 #include <stdlib.h>
 #include <string.h>
 #include <libgen.h>
+#include <pthread.h>
 
 #include "config.h"
 #include "macros.h"
@@ -35,7 +36,9 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 struct trace_buffer *current_trace_buffer = NULL;
 
 #ifndef ANDROID
-static __thread unsigned long long trace_current_nesting = 0;
+__thread unsigned short trace_current_nesting;
+#else
+pthread_key_t nesting_key;
 #endif
 
 #define ALLOC_STRING(dest, source)                      \
@@ -338,6 +341,9 @@ static void TRACE__init(void)
     char buffer_name[512];
     get_exec_name(buffer_name, sizeof(buffer_name));
     TRACE__register_buffer(buffer_name);
+    #ifdef ANDROID
+    pthread_key_create(&nesting_key, NULL);
+    #endif
 }
 
 

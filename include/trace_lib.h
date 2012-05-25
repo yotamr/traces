@@ -26,7 +26,7 @@ extern "C" {
 #include "trace_defs.h"
 #include <sys/syscall.h>
 #include <time.h>    
-
+#include <pthread.h>
 #ifdef __repr__
 #undef __repr__
 #endif
@@ -53,9 +53,10 @@ extern struct trace_log_descriptor __static_log_information_end;
 extern struct trace_type_definition *__type_information_start;
 
 #ifndef ANDROID    
-static __thread unsigned long long trace_current_nesting; 
-#endif
-
+extern __thread unsigned short trace_current_nesting;
+#else
+extern pthread_key_t nesting_key;
+#endif    
 #ifdef ANDROID    
 static inline unsigned short int trace_get_pid(void)
 {
@@ -105,6 +106,14 @@ static inline void trace_increment_nesting_level(void)
 #else
 static inline void trace_increment_nesting_level(void)
 {
+    unsigned short *nesting = (unsigned short *) pthread_getspecific(nesting_key);
+    if (nesting == NULL) {
+        nesting = (unsigned short *) malloc(sizeof(unsigned short));
+        *nesting = 1;
+        pthread_setspecific(nesting_key, nesting);
+    } else {
+        (*nesting)++;
+    }
 }
 #endif    
 
@@ -116,6 +125,9 @@ static inline void trace_decrement_nesting_level(void)
 #else
 static inline void trace_decrement_nesting_level(void)
 {
+    unsigned short *nesting;
+    nesting = (unsigned short *) pthread_getspecific(nesting_key);
+    (*nesting)--;
 }
 #endif    
 
@@ -127,7 +139,15 @@ static inline unsigned short trace_get_nesting_level(void)
 #else
 static inline unsigned short trace_get_nesting_level(void)
 {
-    return 0;
+    unsigned short *nesting = (unsigned short *) pthread_getspecific(nesting_key);
+    if (nesting == NULL) {
+        nesting = (unsigned short *) malloc(sizeof(unsigned short));
+        *nesting = 0;
+        pthread_setspecific(nesting_key, nesting);
+        return 5;
+    }
+    
+    return *nesting;
 }
 #endif    
     
