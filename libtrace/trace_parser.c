@@ -176,7 +176,7 @@ void TRACE_PARSER__set_compact_traces(trace_parser_t *parser, int compact_traces
     parser->compact_traces = compact_traces;
 }
 
-void TRACE_PARSER__always_hex(trace_parser_t *parser, int always_hex)
+void TRACE_PARSER__set_always_hex(trace_parser_t *parser, int always_hex)
 {
     parser->always_hex = always_hex;
 }
@@ -508,12 +508,12 @@ do {                                                                            
         typename v;                                                                      \
         v = (*(typename *)pdata);                                                        \
         pdata += sizeof(v);                                                              \
-        if (param->flags & TRACE_PARAM_FLAG_UNSIGNED)                                    \
+        if ((param->flags & TRACE_PARAM_FLAG_HEX || parser->always_hex))                 \
+            fmt_str = _hex;                                                              \
+        else if (param->flags & TRACE_PARAM_FLAG_UNSIGNED)                               \
             fmt_str = _unsigned;                                                         \
         else if (param->flags & TRACE_PARAM_FLAG_ZERO)                                   \
             fmt_str = _leading_zero;                                                     \
-        else if ((param->flags & TRACE_PARAM_FLAG_HEX))                                  \
-            fmt_str = _hex;                                                              \
                                                                                          \
         SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD(""));                                   \
         APPEND_FORMATTED_TEXT(fmt_str, v);                                               \

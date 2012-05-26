@@ -402,6 +402,9 @@ class TraceParser(object):
     def set_color(self, color_enabled):
         _traces_so.TRACE_PARSER__set_color(byref(self._parser_handle), int(color_enabled))
 
+    def set_always_hex(self, always_hex):
+        _traces_so.TRACE_PARSER__set_always_hex(byref(self._parser_handle), int(always_hex))
+
     def set_show_field_names(self, show_field_names):
         _traces_so.TRACE_PARSER__set_show_field_names(byref(self._parser_handle), int(show_field_names))
 

@@ -187,7 +187,7 @@ class TraceReaderUI(object):
         self._command_mode = None
         self._last_command = None
         self._last_filter = None
-        self._debug_enabled = True
+        self._hex = False
         self._show_field_names = False
         self._cancel_operation = False
         self._progress_notification_record_multiple = 0
@@ -431,6 +431,11 @@ class TraceReaderUI(object):
         command_str = 'severity == DEBUG'
         self._run_command(command_mode, command_str)
 
+    def _toggle_hex(self):
+        self._hex = not self._hex
+        self._trace_parser.set_always_hex(self._hex)
+        self._seek_to_top()
+        
     def _toggle_field_names(self):
         self._show_field_names = not self._show_field_names
         self._trace_parser.set_show_field_names(self._show_field_names)
@@ -465,6 +470,8 @@ class TraceReaderUI(object):
             self._search_leave()
         if input in ('x'):
             self._toggle_field_names()
+        if input in ('o'):
+            self._toggle_hex()
 
         if input == 'end':
             self._trace_walker.seek_to_end()

@@ -189,6 +189,7 @@ void TRACE_PARSER__set_color(trace_parser_t *parser, int has_color);
 void TRACE_PARSER__set_compact_traces(trace_parser_t *parser, int compact_traces);
 void TRACE_PARSER__set_indent(trace_parser_t *parser, int indent);
 void TRACE_PARSER__set_wait_for_input(trace_parser_t *parser, int wait_for_input);
+void TRACE_PARSER__set_always_hex(trace_parser_t *parser, int always_hex);
 void TRACE_PARSER__set_verbose(trace_parser_t *parser, int verbose);
 void TRACE_PARSER__set_show_field_names(trace_parser_t *parser, int show_field_names);
 void TRACE_PARSER__set_relative_ts(trace_parser_t *parser, int relative_ts);
