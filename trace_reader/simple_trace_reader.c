@@ -26,6 +26,7 @@ struct trace_reader_conf {
     unsigned int severity_mask;
     int tail;
     int no_color;
+    int hex;
     int show_field_names;
     int relative_ts;
     int compact_trace;
@@ -43,7 +44,7 @@ static const char *usage =
     " -d  --dump                 Dump contents of trace file                                    \n"
     " -n  --no-color             Disable colored output                                         \n"
     " -e  --dump-debug           Dump all debug entries                                         \n"
-    " -f  --dump-functions       Dump all debug entries and fucntion calls                      \n"
+    " -f  --dump-functions       Dump all debug entries and function calls                      \n"
     " -t  --time                 Dump all records beginning at timestamp, formatted according to trace output timestamps      \n"
     " -o  --show-field-names     Show field names for all trace records                         \n"
     " -r  --relative-timestamp   Print timestamps relative to boot time                         \n"
@@ -51,7 +52,8 @@ static const char *usage =
     " -g  --grep [expression]    Display records whose constant string matches the expression   \n"
     " -s  --print-stats          Print per-log occurrence count                                 \n"
     " -m  --dump-metadata        Dump metadata                                                  \n"
-    " -c  --compact-traces       Compact trace output                                                 \n"
+    " -x  --hex                  Display all numeric values in hexadecimal                      \n"
+    " -c  --compact-traces       Compact trace output                                           \n"
 
     "\n";
 
@@ -66,6 +68,7 @@ static const struct option longopts[] = {
     { "show-field-name", 0, 0, 'o'},
     { "relative-timestamp", required_argument, 0, 't'},
     { "grep", required_argument, 0, 'g'},
+    { "hex", 0, 0, 'x'},
     { "tail", 0, 0, 'i'},
     { "compact-trace", 0, 0, 'c'},
 	{ 0, 0, 0, 0}
@@ -76,7 +79,7 @@ static void print_usage(void)
     printf(usage, "simple_trace_reader");
 }
 
-static const char shortopts[] = "cig:moft:hdnesr";
+static const char shortopts[] = "xcig:moft:hdnesr";
 
 #define SECOND (1000000000LL)
 #define MINUTE (SECOND * 60LL)
@@ -169,7 +172,9 @@ static int parse_command_line(struct trace_reader_conf *conf, int argc, char **a
         case 'o':
             conf->show_field_names = TRUE;
             break;
-            
+        case 'x':
+            conf->hex = TRUE;
+            break;
         case '?':
             print_usage();
             return -1;
@@ -247,6 +252,11 @@ static void set_parser_params(struct trace_reader_conf *conf, trace_parser_t *pa
         TRACE_PARSER__set_compact_traces(parser, 0);
     }
 
+    if (conf->hex) {
+        TRACE_PARSER__set_always_hex(parser, 1);
+    } else {
+        TRACE_PARSER__set_always_hex(parser, 0);
+    }
 }
 
 static int dump_all_files(struct trace_reader_conf *conf)
@@ -367,6 +377,7 @@ int main(int argc, char **argv)
     case OP_TYPE_INVALID:
         fprintf(stderr, "simple_trace_reader: Must specify operation type (-s or -d)\n");
         print_usage();
+        return 1;
     default:
         break;
     }
