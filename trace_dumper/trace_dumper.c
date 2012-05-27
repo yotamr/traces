@@ -312,10 +312,14 @@ static int trace_dumper_write(struct trace_dumper_configuration_s *conf, struct 
     int expected_bytes = total_iovec_len(iov, iovcnt);
     unsigned int i;
     int fd;
+    int rc;
     
     for_each_open_stream(conf, i, fd) {
         if (fd >= 0) {
-            do_writev(fd, iov, iovcnt);
+            rc = do_writev(fd, iov, iovcnt);
+            if (0 != rc) {
+                return -1;
+            }
         }
     }
     
