@@ -46,11 +46,12 @@ other_class *some_class::method()
 
 int main(void) {
     int value = 0;
+    double some_double = 5.5;
     const char *some_str = "some variable string which is very very long";
     while (1) {
         increment_twice(&value, 1, 2, 3, 4, 5, 6);
         DEBUG("Oh no");
-        WARN(some_str, 100, 150, 100, 100, 100, 100, some_str, 100, 150, 200, 500, 6710, 1021);
+        WARN(some_str, 100, some_double, 150, 100, 100, 100, 100, some_str, 100, 150, 200, 500, 6710, 1021);
         value = calculate(CALCULATION_TYPE_DECREMENT, value);
         usleep(1000000);
     }

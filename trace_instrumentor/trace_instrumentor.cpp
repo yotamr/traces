@@ -155,6 +155,15 @@ bool TraceParam::parseBasicTypeParam(QualType qual_type)
         return false;
     }
 
+    const BuiltinType *BT = qual_type->getAs<BuiltinType>();
+    if (BT->getKind() == BuiltinType::Double) {
+        size = ast.getTypeSize(type) / 8;
+        type_name = QualType(qual_type.split().first, 0).getAsString();
+        flags |= TRACE_PARAM_FLAG_DOUBLE;
+        return true; 
+    }
+    
+
     if (!type->isIntegerType()) {
         return false;
     }
@@ -186,12 +195,9 @@ bool TraceParam::parseBasicTypeParam(QualType qual_type)
             type_name = "bool";
     }
 
-
     return true;
-
 }
 
-    
 bool TraceParam::parseBasicTypeParam(const Expr *expr)
 {
     const Expr *stripped_expr = expr->IgnoreImpCasts();
@@ -907,7 +913,7 @@ bool TraceParam::fromType(QualType type, bool fill_unknown_type) {
 bool TraceParam::fromExpr(const Expr *trace_param, bool deref_pointer)
 {
     if (deref_pointer && parseStringParam(trace_param)) {
-        return true; 
+        return true;
     } else if (parseHexBufParam(trace_param)) {
         return true;
     } else if (parseEnumTypeParam(trace_param)) {
