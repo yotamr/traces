@@ -60,7 +60,6 @@ struct trace_mapped_records {
     
     unsigned long long current_read_record;
     unsigned int last_flush_offset;
-
     unsigned long long next_flush_ts;
     unsigned int next_flush_record;
     unsigned int next_flush_offset;
@@ -123,6 +122,7 @@ struct trace_dumper_configuration_s {
     unsigned int receive_records;
     unsigned int debug_online;
     unsigned int syslog;
+    bool_t from_end;
     bool_t wait_for_remote_dumper;
     bool_t passive_network_dumping;
     bool_t dump_to_network;
@@ -463,6 +463,27 @@ static bool_t process_exists(unsigned short pid) {
     }
 }
 
+static unsigned int smallest_ts_record(struct trace_dumper_configuration_s *conf, struct trace_mapped_records *mapped_records)
+{
+    unsigned int i;
+    unsigned int min_record = 0;
+    unsigned long long min_ts = -1;
+    struct trace_record *record = &mapped_records->records[0];
+    for (i = 0; i < mapped_records->imutab->max_records; i++) {
+        unsigned long long ts = record->ts;
+        if (!ts) {
+            continue;
+        }
+        if (ts < min_ts) {
+            min_record = i;
+            min_ts = ts;
+        }
+
+        record = &mapped_records->records[i];
+    }
+
+    return min_record;
+}
 static int map_buffer(struct trace_dumper_configuration_s *conf, pid_t pid)
 {
     int static_fd, dynamic_fd;
@@ -576,10 +597,10 @@ static int map_buffer(struct trace_dumper_configuration_s *conf, pid_t pid)
         mapped_records->mutab = &unmapped_trace_buffer->u._all_records[i].mutab;
         mapped_records->imutab = &unmapped_trace_buffer->u._all_records[i].imutab;
         mapped_records->last_flush_offset = 0;
-        if (dead) {
-            mapped_records->current_read_record = 0;
+        if (conf->from_end) {
+            mapped_records->current_read_record = mapped_records->mutab->current_record & mapped_records->imutab->max_records_mask;
         } else {
-            mapped_records->current_read_record = 0; //mapped_records->mutab->current_record & mapped_records->imutab->max_records_mask;
+            mapped_records->current_read_record = smallest_ts_record(conf, mapped_records);
         }
     }
 
@@ -1470,6 +1491,7 @@ static const char usage[] = {
     " -t  --port [port]                     Specify a destination port number when writing to network              \n" \
     " -c  --read-from-remote-dumper [port]  Receive records from a remote trace_dumper                             \n" \
     " -i  --passive                         When dumping records to network, allow a remote dumper to connect      \n" \
+    " -e  --from-end                        Start dumping records from the last record written, rather than the earliest one \n" \
     "\n"};
 
 static const struct option longopts[] = {
@@ -1488,7 +1510,7 @@ static const struct option longopts[] = {
     { "port", required_argument, 0, 't'},
     { "wait-for-server", required_argument, 0, 'a'},
     { "port", required_argument, 0, 't'},
-    { "wait-for-server", 0, 0, 'a'},
+    { "from-end", 0, 0, 'e'},
     { "passive", 0, 0, 'i'},
 	{ 0, 0, 0, 0}
 };
@@ -1498,7 +1520,7 @@ static void print_usage(void)
     printf(usage, "trace_dumper");
 }
 
-static const char shortopts[] = "x:tiacr:q:sw::p:hf:odb:n";
+static const char shortopts[] = "ex:tiacr:q:sw::p:hf:odb:n";
 
 #define DEFAULT_LOG_DIRECTORY "/mnt/logs"
 #define DEFAULT_WRITE_PORT 5869
@@ -1549,6 +1571,9 @@ static int parse_commandline(struct trace_dumper_configuration_s *conf, int argc
         case 'w':
             conf->fixed_output_filename = optarg;
             conf->write_to_file = TRUE;
+            break;
+        case 'e':
+            conf->from_end = TRUE;
             break;
         case 'x':
             rc = inet_pton(AF_INET, optarg, &addr);

@@ -308,6 +308,7 @@ static void map_dynamic_log_buffers()
     int rc = ftruncate(shm_fd, sizeof(struct trace_buffer));
     ASSERT (0 == rc);
     void *mapped_addr = mmap(NULL, sizeof(struct trace_buffer), PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    memset(mapped_addr, 0, sizeof(struct trace_buffer));
     ASSERT(mapped_addr != NULL);
     set_current_trace_buffer_ptr((struct trace_buffer *)mapped_addr);
     init_records_metadata();
