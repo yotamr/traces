@@ -206,6 +206,7 @@ enum trace_param_desc_flags {
     TRACE_PARAM_FLAG_TYPEDEF  = 0x8000,
     TRACE_PARAM_FLAG_NAMED_PARAM  = 0x10000,
     TRACE_PARAM_FLAG_RECORD  = 0x20000,
+    TRACE_PARAM_FLAG_DOUBLE  = 0x40000,
 };
 
 struct trace_param_descriptor {

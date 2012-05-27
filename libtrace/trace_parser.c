@@ -720,7 +720,16 @@ static int format_typed_params(trace_parser_t *parser, struct trace_parser_buffe
                 WRITE_SIMPLE_PDATA_VALUE("%lld", "%llu", "%016llx", "0x%llx", unsigned long long);
             }
         }
-        
+
+        if (param->flags & TRACE_PARAM_FLAG_DOUBLE) {
+            if (describe_params) {
+                SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD("<double>"));
+                SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
+            } else {
+                WRITE_SIMPLE_PDATA_VALUE("%f", "%f", "%016a", "0x%a", double);
+            }
+        }
+
         if ((param + 1)->flags == 0 && (trace_kind == TRACE_LOG_DESCRIPTOR_KIND_FUNC_ENTRY || trace_kind == TRACE_LOG_DESCRIPTOR_KIND_FUNC_LEAVE)) {
             SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
             SIMPLE_APPEND_FORMATTED_TEXT((")"));
