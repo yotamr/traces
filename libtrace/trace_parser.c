@@ -163,6 +163,7 @@ void trace_parser_init(trace_parser_t *parser, trace_parser_event_handler_t even
     parser->stream_type = stream_type;
     BufferParseContextList__init(&parser->buffer_contexts);
     parser->record_filter.type = TRACE_MATCHER_TRUE;
+    parser->show_timestamp = TRUE;
     RecordsAccumulatorList__init(&parser->records_accumulators);
 }
 
@@ -174,6 +175,11 @@ void TRACE_PARSER__set_color(trace_parser_t *parser, int has_color)
 void TRACE_PARSER__set_compact_traces(trace_parser_t *parser, int compact_traces)
 {
     parser->compact_traces = compact_traces;
+}
+
+void TRACE_PARSER__set_show_timestamp(trace_parser_t *parser, int show_timestamp)
+{
+    parser->show_timestamp = show_timestamp;
 }
 
 void TRACE_PARSER__set_always_hex(trace_parser_t *parser, int always_hex)
@@ -453,6 +459,11 @@ struct dump_context_s {
 
 void format_timestamp(trace_parser_t *parser, unsigned long long ts, char *timestamp, unsigned int timestamp_size)
 {
+    if (!parser->show_timestamp) {
+        *timestamp = '\0';
+        return;
+    }
+    
     if (parser->relative_ts) {
         // TODO: Not really relative, is it?
         snprintf(timestamp, timestamp_size, "%llu", ts);
