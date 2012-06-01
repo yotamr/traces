@@ -1,0 +1,52 @@
+Traces supports building traced targets for ICS. Other android versions may be supported, but haven't been tested.
+To add support for traced targets in your Android ICS tree, follow these steps:
+  1. Use 'git am' to apply android/patches/0001-build-system-Add-support-for-building-traced-targets.patch to your Android tree
+  2. Copy the traces repository to $ANDROID_ROOT/external/traces and run 'make all'
+  3. Edit build/core/traced.mk and make sure LOCAL_CC/CXX point to the location of ccwrap.y
+  4. Building the entire android tree will also build the trace_dumper, trace readers and demo application for ARM.
+  5. Your android filesystem should have a directory at /dev/shm which is mounted on a tmpfs.
+     Edit your device's init.rc to make the directory (e.g., ./out/target/product/maguro/root/init.rc)
+  6. To view the traces of traced targets:
+     * Run trace_dumper -o (to view the traces online, similar to logcat)
+     * Use trace_dumper -w/-x to write the traces to the local fs or to the network.
+       NOTE: the trace_dumper supports passive networking dumping. Passive dumping will cause the dumper to start writing
+             traces to network only after a remote dumper has connected to it. See the '-i' and '-x' options. You can use passive dumping in conjunction
+             with adb forward to dump traces over a USB connection
+       Dumping traces to a file/network will result in much less CPU being used, as no parsing is done. It is preferable to dump records rather than view them online
+       to avoid hogging the device CPU (as logcat does in intensive logging)
+
+NOTES:
+------
+
+Due to a current limitation, trace files generated on ARM devices cannot be parsed using x86 readers. You can either:
+     1. Parse the trace files on your android device
+     2. Use qemu-arm to run the ARM version of the simple_trace_reader
+
+After applying the provided patch, the trace_dumper, trace reader and demo applications will be installed to /system/bin in the system.img
+
+EXAMPLES
+--------
+
+Running trace_dumper in online mode, similar in fashion to logcat:
+>> adb shell trace_dumper -o
+
+Running trace_dumper in file write mode, without online parsing:
+>> adb shell trace_dumper -w/mnt/sdcard/trace_dump
+    
+Write traces to a log directory and manage it with quotas and rotations. Suitable for running trace_dumper constantly in the background:    
+adb shell -b /mnt/sdcard/logs -w
+
+Read the traces on an Android device:        
+>> adb shell simple_trace_reader -d /mnt/sdcard/trace_dump
+    
+Run trace_dumper in passive network write mode, using adb forward
+./adb forward tcp:5869 tcp:5869
+(on the device) >> adb shell trace_dumper -i
+(on the host)   >> trace_dumper -i -x 127.0.0.1 -wtraces_from_device
+
+Reading trace file on an x86 host:
+qemu-arm ./out/target/product/maguro/system/bin/simple_trace_reader -d traces_from_device
+
+TODO
+----
+Make the trace file format architecture agnostic    
