@@ -2,7 +2,7 @@ Traces supports building traced targets for ICS. Other android versions may be s
 To add support for traced targets in your Android ICS tree, follow these steps:
   1. Use 'git am' to apply android/patches/0001-build-system-Add-support-for-building-traced-targets.patch to your Android tree
   2. Copy the traces repository to $ANDROID_ROOT/external/traces and run 'make all'
-  3. Edit build/core/traced.mk and make sure LOCAL_CC/CXX point to the location of ccwrap.y
+  3. Edit build/core/traced.mk and make sure LOCAL_CC/CXX point to the location of ccwrap.py
   4. Building the entire android tree will also build the trace_dumper, trace readers and demo application for ARM.
   5. Your android filesystem should have a directory at /dev/shm which is mounted on a tmpfs.
      Edit your device's init.rc to make the directory (e.g., ./out/target/product/maguro/root/init.rc)
@@ -27,10 +27,10 @@ After applying the provided patch, the trace_dumper, trace reader and demo appli
 EXAMPLES
 --------
 
-Running trace_dumper in online mode, similar in fashion to logcat:
+Run trace_dumper in online mode, similar in fashion to logcat:
 >> adb shell trace_dumper -o
 
-Running trace_dumper in file write mode, without online parsing:
+Run trace_dumper in file write mode, without online parsing:
 >> adb shell trace_dumper -w/mnt/sdcard/trace_dump
     
 Write traces to a log directory and manage it with quotas and rotations. Suitable for running trace_dumper constantly in the background:    
