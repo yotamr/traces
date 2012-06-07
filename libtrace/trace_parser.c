@@ -331,7 +331,7 @@ static struct trace_record_accumulator *get_accumulator(trace_parser_t *parser, 
     struct trace_record_accumulator *accumulator;
     for (i = 0; i < RecordsAccumulatorList__element_count(&parser->records_accumulators); i++) {
         RecordsAccumulatorList__get_element_ptr(&parser->records_accumulators, i, &accumulator);
-        if (accumulator->tid == rec->tid && accumulator->ts == rec->ts) {
+        if (accumulator->tid == rec->tid && accumulator->ts == rec->ts && accumulator->severity == rec->severity) {
             return accumulator;
         }
     }
@@ -345,7 +345,7 @@ static void free_accumulator(trace_parser_t *parser, struct trace_record *rec)
     struct trace_record_accumulator *accumulator;
     for (i = 0; i < RecordsAccumulatorList__element_count(&parser->records_accumulators); i++) {
         RecordsAccumulatorList__get_element_ptr(&parser->records_accumulators, i, &accumulator);
-        if (accumulator->tid == rec->tid && rec->ts == accumulator->ts) {
+        if (accumulator->tid == rec->tid && rec->ts == accumulator->ts && accumulator->severity == rec->severity) {
             RecordsAccumulatorList__remove_element(&parser->records_accumulators, i);
             return;
         }
@@ -364,14 +364,19 @@ static struct trace_record *accumulate_record(trace_parser_t *parser, struct tra
             return NULL;
         }        
 
+        if (!RecordsAccumulatorList__insertable(&parser->records_accumulators)) {
+            RecordsAccumulatorList__remove_element(&parser->records_accumulators, 0);
+        }
+
         int rc = RecordsAccumulatorList__allocate_element(&parser->records_accumulators);
         if (0 != rc) {
-            return NULL;
+            abort();
         }
         
         RecordsAccumulatorList__get_element_ptr(&parser->records_accumulators, RecordsAccumulatorList__last_element_index(&parser->records_accumulators), &accumulator);
         accumulator->tid = rec->tid;
         accumulator->ts = rec->ts;
+        accumulator->severity = rec->severity;
         accumulator->data_offset = TRACE_RECORD_HEADER_SIZE;
 
         memcpy(accumulator->accumulated_data, (char *) rec, TRACE_RECORD_HEADER_SIZE);

@@ -44,6 +44,8 @@ struct trace_record_accumulator {
     unsigned int data_offset;
     unsigned short int tid;
     unsigned long long ts;
+    unsigned severity;
+    unsigned log_id;
 };
 
 CREATE_LIST_PROTOTYPE(BufferParseContextList, struct trace_parser_buffer_context)
