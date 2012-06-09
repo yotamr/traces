@@ -32,6 +32,8 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 #include "trace_metadata_util.h"
 #include "trace_parser.h"
 
+#define COLOR_BOOL parser->color
+#include "colors.h"
 CREATE_LIST_IMPLEMENTATION(BufferParseContextList, struct trace_parser_buffer_context)
 CREATE_LIST_IMPLEMENTATION(RecordsAccumulatorList, struct trace_record_accumulator)
 
@@ -42,34 +44,6 @@ CREATE_LIST_IMPLEMENTATION(RecordsAccumulatorList, struct trace_record_accumulat
 #define TRACE_HOUR   (TRACE_MINUTE * 60)
 #define TRACE_DAY    (TRACE_HOUR * 24)
 #define TRACE_YEAR   (TRACE_DAY * 365)
-
-#define _B_BLACK(x)        "\033[40m" x
-#define _F_GREY(x)         "\033[1;24;30m" x
-#define _F_WHITE(x)        "\033[0;37m" x
-#define _F_GREEN(x)        "\033[0;32m" x
-#define _F_MAGENTA(x)      "\033[0;35m" x
-#define _F_WHITE_BOLD(x)   "\033[1;37m" x 
-#define _F_GREEN_BOLD(x)   "\033[1;32m" x 
-#define _F_YELLOW_BOLD(x)  "\033[1;33m" x
-#define _F_RED_BOLD(x)     "\033[1;31m" x
-#define _F_CYAN_BOLD(x)    "\033[1;36m" x
-#define _F_BLUE_BOLD(x)    "\033[1;34m" x
-#define _F_MAGENTA_BOLD(x) "\033[1;35m" x
-#define _ANSI_DEFAULTS(x)  "\033[0;39;49m" x
-
-#define B_BLACK(x)        parser->color ? _B_BLACK(x) : x
-#define F_GREY(x)         parser->color ? _F_GREY(x) : x
-#define F_WHITE(x)        parser->color ? _F_WHITE(x) : x
-#define F_GREEN(x)        parser->color ? _F_GREEN(x) : x
-#define F_MAGENTA(x)      parser->color ? _F_MAGENTA(x) : x
-#define F_WHITE_BOLD(x)   parser->color ? _F_WHITE_BOLD(x) : x
-#define F_GREEN_BOLD(x)   parser->color ? _F_GREEN_BOLD(x) : x
-#define F_YELLOW_BOLD(x)  parser->color ? _F_YELLOW_BOLD(x) : x
-#define F_RED_BOLD(x)     parser->color ? _F_RED_BOLD(x) : x
-#define F_CYAN_BOLD(x)    parser->color ? _F_CYAN_BOLD(x) : x
-#define F_BLUE_BOLD(x)    parser->color ? _F_BLUE_BOLD(x) : x
-#define F_MAGENTA_BOLD(x) parser->color ? _F_MAGENTA_BOLD(x) : x
-#define ANSI_DEFAULTS(x)  parser->color ? _ANSI_DEFAULTS(x) : x
 
 static int wait_for_data(trace_parser_t *parser)
 {

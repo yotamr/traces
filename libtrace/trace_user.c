@@ -291,7 +291,7 @@ static void init_records_metadata(void)
     current_trace_buffer->u.records._debug.mutab.current_record = 0;
     current_trace_buffer->u.records._other.mutab.current_record = 0;
 
-    init_records_immutable_data(&current_trace_buffer->u.records._other, TRACE_RECORD_BUFFER_RECS, (1 << TRACE_SEV_ERROR) | (1 << TRACE_SEV_INFO) | (1 << TRACE_SEV_WARN));
+    init_records_immutable_data(&current_trace_buffer->u.records._other, TRACE_RECORD_BUFFER_RECS, (1 << TRACE_SEV_FATAL) | (1 << TRACE_SEV_ERROR) | (1 << TRACE_SEV_INFO) | (1 << TRACE_SEV_WARN));
     init_records_immutable_data(&current_trace_buffer->u.records._debug, TRACE_RECORD_BUFFER_RECS, (1 << TRACE_SEV_DEBUG));
     init_records_immutable_data(&current_trace_buffer->u.records._funcs, TRACE_RECORD_BUFFER_RECS, (1 << TRACE_SEV_FUNC_TRACE));
 }

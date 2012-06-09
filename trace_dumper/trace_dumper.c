@@ -35,6 +35,10 @@
 #include "trace_lib.h"
 #include "trace_user.h"
 
+
+#define COLOR_BOOL conf->color
+#include "colors.h"
+
 #define MAX_FILTER_SIZE (10)
 #define METADATA_IOVEC_SIZE 2*(MAX_METADATA_SIZE/TRACE_RECORD_PAYLOAD_SIZE+1)
 
@@ -108,6 +112,7 @@ struct trace_record_file {
 enum operation_type {
     OPERATION_TYPE_DUMP_RECORDS,
     OPERATION_TYPE_DUMP_RECORDS_FROM_NETWORK,
+    OPERATION_TYPE_DUMP_BUFFER_STATS,
 
 };
 
@@ -117,6 +122,7 @@ struct trace_dumper_configuration_s {
     struct trace_record_matcher_spec_s severity_filter[SEVERITY_FILTER_LEN];
     unsigned int header_written;
     unsigned int write_to_file;
+    unsigned int dump_online_statistics;
     const char *fixed_output_filename;
     unsigned int online;
     unsigned int receive_records;
@@ -137,7 +143,8 @@ struct trace_dumper_configuration_s {
     struct sockaddr_in remote_dumper_address;
     unsigned short port;
     unsigned long long start_time;
-    int no_color;
+    unsigned int no_color_specified;
+    unsigned int color;
     enum trace_severity minimal_allowed_severity;
     unsigned long long next_possible_overwrite_relaxation;
     unsigned long long last_overwrite_test_time;
@@ -153,6 +160,7 @@ struct trace_dumper_configuration_s {
 	unsigned long long prev_flush_ts;
 	unsigned long long next_flush_ts;
 	unsigned long long ts_flush_delta;
+	unsigned long long next_stats_dump_ts;
     struct trace_parser parser;
     BufferFilter filtered_buffers;
     MappedBuffers mapped_buffers;
@@ -188,6 +196,102 @@ pid_t get_pid_from_shm_name(const char *shm_name)
     str_pid[underscore - shm_name] = '\0';
     return atoi(str_pid);
     
+}
+
+#define for_each_mapped_records(_i_, _rid_, _mapped_buffer_, _mr_)      \
+    for (({_i_ = 0; MappedBuffers__get_element_ptr(&conf->mapped_buffers, i, &_mapped_buffer_);}); _i_ < MappedBuffers__element_count(&conf->mapped_buffers); ({_i_++; MappedBuffers__get_element_ptr(&conf->mapped_buffers, i, &_mapped_buffer_);})) \
+        for (({_rid_ = 0; _mr_ = &_mapped_buffer_->mapped_records[_rid_];}); _rid_ < TRACE_BUFFER_NUM_RECORDS; ({_rid_++; _mr_ = &_mapped_buffer_->mapped_records[_rid_];}))
+
+#define for_each_mapped_buffer(_i_, _mapped_buffer_)      \
+    for (({_i_ = 0; MappedBuffers__get_element_ptr(&conf->mapped_buffers, i, &_mapped_buffer_);}); _i_ < MappedBuffers__element_count(&conf->mapped_buffers); ({_i_++; MappedBuffers__get_element_ptr(&conf->mapped_buffers, i, &_mapped_buffer_);}))
+
+#define TRACE_SEV_X(v, str) [v] = #str,
+static const char *sev_to_str[] = {
+	TRACE_SEVERITY_DEF
+};
+#undef TRACE_SEV_X
+
+static void severity_type_to_str(unsigned int severity_type, char *severity_str, unsigned int severity_str_size)
+{
+    int i;
+    unsigned int first_element = 1;
+    memset(severity_str, 0, severity_str_size);
+    for (i = TRACE_SEV__MIN; i <= TRACE_SEV__MAX; i++) {
+        if (severity_type & (1 << i)) {
+            if (!first_element) {
+                strncat(severity_str, ", ", severity_str_size);
+            }
+            strncat(severity_str, sev_to_str[i], severity_str_size);
+            first_element = 0;
+        }
+    }
+}
+
+static void dump_online_statistics(struct trace_dumper_configuration_s *conf)
+{
+    char display_bar[60];
+    char severity_type_str[100];
+    unsigned int current_display_index = 0;
+    unsigned int next_display_record = 0;
+    unsigned int unflushed_records = 0;
+    int i;
+    unsigned int j;
+    int rid;
+    struct trace_mapped_buffer *mapped_buffer;
+    struct trace_mapped_records *mapped_records;
+    
+    for_each_mapped_records(i, rid, mapped_buffer, mapped_records) {
+        current_display_index = 0;
+        memset(display_bar, '_', sizeof(display_bar));
+        display_bar[sizeof(display_bar) - 1] = '\0';
+        unflushed_records = 0;
+        next_display_record = 0;
+        unsigned int display_resolution = mapped_records->imutab->max_records / sizeof(display_bar);
+        for (j = 0; j < mapped_records->imutab->max_records; j++) {
+            unsigned long long ts = mapped_records->records[j].ts;
+
+            if (j > next_display_record) {
+                next_display_record += display_resolution;
+                current_display_index++;
+            }
+
+            if (!ts) {
+                continue;
+            }
+
+            if (ts > mapped_records->mutab->latest_flushed_ts) {
+                unflushed_records++;
+                display_bar[current_display_index] = '#';
+            }
+        }
+
+        severity_type_to_str(mapped_records->imutab->severity_type, severity_type_str, sizeof(severity_type_str));
+        unsigned int usage_percent = unflushed_records / (mapped_records->imutab->max_records / 100);
+        char formatted_usage[15];
+        if (usage_percent < 50) {
+            snprintf(formatted_usage, sizeof(formatted_usage), _F_GREEN("%%%03d"), usage_percent);
+        } else if (usage_percent >= 50 && usage_percent < 80) {
+            snprintf(formatted_usage, sizeof(formatted_usage), _F_YELLOW_BOLD("%%%03d"), usage_percent);
+        } else {
+            snprintf(formatted_usage, sizeof(formatted_usage), _F_RED_BOLD("%%%03d"), usage_percent);
+        }
+        
+        printf(_F_MAGENTA("%-16s") _F_GREEN("%-24s") _ANSI_DEFAULTS("[") _F_YELLOW_BOLD("%d") _ANSI_DEFAULTS("]") _ANSI_DEFAULTS("[") _F_BLUE_BOLD("%07x") _ANSI_DEFAULTS("/") _F_BLUE_BOLD("%07x") _ANSI_DEFAULTS("]") "    (%s" _ANSI_DEFAULTS(")") _ANSI_DEFAULTS(" ") "(%s) \n", mapped_buffer->name, severity_type_str, mapped_buffer->pid, unflushed_records, mapped_records->imutab->max_records, formatted_usage, display_bar);
+    }
+}
+
+#define STATS_DUMP_DELTA (TRACE_SECOND * 3)
+static void possibly_dump_online_statistics(struct trace_dumper_configuration_s *conf)
+{
+    unsigned long long current_time = trace_get_nsec();
+    if (! (conf->dump_online_statistics && current_time > conf->next_stats_dump_ts)) {
+        return;
+    }
+
+    printf("%s %s", CLEAR_SCREEN, GOTO_TOP);
+    dump_online_statistics(conf);
+
+    conf->next_stats_dump_ts = current_time + STATS_DUMP_DELTA;
 }
 
 bool_t is_static_log_data_shm_region(const char *shm_name)
@@ -813,15 +917,6 @@ static int delete_oldest_trace_file(struct trace_dumper_configuration_s *conf)
     return unlink(filename);
 }
 
-#define for_each_mapped_records(_i_, _rid_, _mapped_buffer_, _mr_)      \
-    for (({_i_ = 0; MappedBuffers__get_element_ptr(&conf->mapped_buffers, i, &_mapped_buffer_);}); _i_ < MappedBuffers__element_count(&conf->mapped_buffers); ({_i_++; MappedBuffers__get_element_ptr(&conf->mapped_buffers, i, &_mapped_buffer_);})) \
-        for (({_rid_ = 0; _mr_ = &_mapped_buffer_->mapped_records[_rid_];}); _rid_ < TRACE_BUFFER_NUM_RECORDS; ({_rid_++; _mr_ = &_mapped_buffer_->mapped_records[_rid_];}))
-
-#define for_each_mapped_buffer(_i_, _mapped_buffer_)      \
-    for (({_i_ = 0; MappedBuffers__get_element_ptr(&conf->mapped_buffers, i, &_mapped_buffer_);}); _i_ < MappedBuffers__element_count(&conf->mapped_buffers); ({_i_++; MappedBuffers__get_element_ptr(&conf->mapped_buffers, i, &_mapped_buffer_);})) 
-
-
-
 static void discard_buffer(struct trace_dumper_configuration_s *conf, struct trace_mapped_buffer *mapped_buffer)
 {
     INFO("Discarding pid", mapped_buffer->pid, mapped_buffer->name);
@@ -1342,6 +1437,8 @@ static int dump_records(struct trace_dumper_configuration_s *conf)
             return -1;
         }
         
+        possibly_dump_online_statistics(conf);
+        
         rc = trace_flush_buffers(conf);
         if (0 != rc) {
             return -1;
@@ -1359,6 +1456,25 @@ static int dump_records(struct trace_dumper_configuration_s *conf)
             return rc;
         }
     }
+}
+
+
+static int op_dump_stats(struct trace_dumper_configuration_s *conf)
+{
+    int rc;
+    if (!conf->attach_to_pid) {
+        rc = map_new_buffers(conf);
+    }  else {
+        rc = map_buffer(conf, atoi(conf->attach_to_pid));
+    }
+
+    if (0 != rc) {
+        ERROR("Error mapping buffers");
+        return 1;
+    }
+
+    dump_online_statistics(conf);
+    return 0;
 }
 
 static int op_dump_records(struct trace_dumper_configuration_s *conf)
@@ -1490,6 +1606,9 @@ static int run_dumper(struct trace_dumper_configuration_s *conf)
     case OPERATION_TYPE_DUMP_RECORDS_FROM_NETWORK:
         return op_dump_records_from_network(conf);
         break;
+    case OPERATION_TYPE_DUMP_BUFFER_STATS:
+        return op_dump_stats(conf);
+        break;
     default:
         break;
     }
@@ -1522,6 +1641,7 @@ static const char usage[] = {
     " -c  --read-from-remote-dumper [port]  Receive records from a remote trace_dumper                             \n" \
     " -i  --passive                         When dumping records to network, allow a remote dumper to connect      \n" \
     " -e  --from-end                        Start dumping records from the last record written, rather than the earliest one \n" \
+    " -v  --dump-online-statistics          Dump buffer statistics \n"
     "\n"};
 
 static const struct option longopts[] = {
@@ -1546,6 +1666,7 @@ static const struct option longopts[] = {
     { "port", required_argument, 0, 't'},
     { "from-end", 0, 0, 'e'},
     { "passive", 0, 0, 'i'},
+    { "dump-online-statistics", 0, 0, 'v'},
 	{ 0, 0, 0, 0}
 };
 
@@ -1554,7 +1675,7 @@ static void print_usage(void)
     printf(usage, "trace_dumper");
 }
 
-static const char shortopts[] = "ex:ldujkr:q:sw::p:hf:ob:n";
+static const char shortopts[] = "vex:ldujkr:q:sw::p:hf:ob:n";
 
 #define DEFAULT_LOG_DIRECTORY "/mnt/logs"
 #define DEFAULT_WRITE_PORT 5869
@@ -1594,7 +1715,7 @@ static int parse_commandline(struct trace_dumper_configuration_s *conf, int argc
             conf->logs_base = optarg;
             break;
         case 'n':
-            conf->no_color = 1;
+            conf->no_color_specified = 0;
             break;
         case 'p':
             conf->attach_to_pid = optarg;
@@ -1658,6 +1779,9 @@ static int parse_commandline(struct trace_dumper_configuration_s *conf, int argc
             break;
         case 'k':
             conf->error_online = 1;
+            break;
+        case 'v':
+            conf->dump_online_statistics = 1;
             break;
         case '?':
             print_usage();
@@ -1743,9 +1867,12 @@ static int init_dumper(struct trace_dumper_configuration_s *conf)
     
     if (conf->dump_from_network) {
         conf->op_type = OPERATION_TYPE_DUMP_RECORDS_FROM_NETWORK;
+    } else if (!conf->write_to_file && !conf->online && conf->dump_online_statistics) {
+        conf->op_type = OPERATION_TYPE_DUMP_BUFFER_STATS;
     } else {
         conf->op_type = OPERATION_TYPE_DUMP_RECORDS;
     }
+    
     conf->logs_base = DEFAULT_LOG_DIRECTORY;
     conf->record_file.fd = -1;
     conf->remote_dumper_socket = -1;
@@ -1753,11 +1880,15 @@ static int init_dumper(struct trace_dumper_configuration_s *conf)
     TRACE_PARSER__from_external_stream(&conf->parser, parser_event_handler, NULL);
     TRACE_PARSER__set_indent(&conf->parser, TRUE);
     TRACE_PARSER__set_relative_ts(&conf->parser, TRUE);
-    if (!conf->no_color) {
-        TRACE_PARSER__set_color(&conf->parser, TRUE);
+    
+    if (conf->no_color_specified) {
+        conf->color = 0;
+        TRACE_PARSER__set_color(&conf->parser, FALSE);
     } else {
+        conf->color = 1;
         TRACE_PARSER__set_color(&conf->parser, TRUE);
-    }
+     }
+    
     if (conf->syslog) {
         openlog("traces", 0, 0);
         TRACE_PARSER__set_indent(&conf->parser, 0);
@@ -1855,8 +1986,8 @@ int main(int argc, char **argv)
     }
     
     set_signal_handling();
-    if (!conf->write_to_file && !conf->online && !conf->dump_to_network && !conf->dump_from_network) {
-        fprintf(stderr, "Must specify either -w or -o or -c\n");
+    if (!conf->write_to_file && !conf->online && !conf->dump_to_network && !conf->dump_from_network && conf->dump_online_statistics) {
+        fprintf(stderr, "Must specify either -w, -o, -c or -v\n");
         print_usage();
         return 1;
     }
