@@ -1630,7 +1630,7 @@ static const char usage[] = {
     " -p  --pid [pid]                       Attach the specified process                                           \n" \
     " -d  --debug-online                    Display DEBUG records in online mode                                   \n" \
     " -l  --trace-online                    Display function traces in online mode                                 \n" \
-    " -u  --info-online                     Display INFO records in online mode                                    \n" \
+    " -i  --info-online                     Display INFO records in online mode                                    \n" \
     " -j  --warn-online                     Display WARN records in online mode                                    \n" \
     " -k  --error-online                    Display ERROR/FATAL records in online mode                             \n" \
     " -s  --syslog                          In online mode, write the entries to syslog instead of displaying them \n" \
@@ -1649,7 +1649,7 @@ static const struct option longopts[] = {
 	{ "online", 0, 0, 'o'},
     { "trace-online", 0, 0, 'l'},
     { "debug-online", 0, 0, 'd'},
-    { "info-online", 0, 0, 'u'},
+    { "info-online", 0, 0, 'i'},
     { "warn-online", 0, 0, 'j'},
     { "error-online", 0, 0, 'k'},
     { "logdir", required_argument, 0, 'b'},
@@ -1770,7 +1770,7 @@ static int parse_commandline(struct trace_dumper_configuration_s *conf, int argc
         case 'd':
             conf->debug_online = 1;
             break;
-        case 'u':
+        case 'i':
             conf->info_online = 1;
             break;
         case 'j':
