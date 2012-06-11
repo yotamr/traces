@@ -61,18 +61,22 @@ def get_type_sections(object_files):
 
 def get_type_information_section_script(args, linked_objects):
     type_section_names = get_type_sections(linked_objects)
-    linker_script_addition = []
+    linker_script_additions = []
     for type_section_name in type_section_names:
-        _section_size_name = type_section_name.replace(".", "_") + "_size"
         additions = ["%s : {" % (type_section_name,),
-                     "    %s = .;" % (_section_size_name),
-                     "    *(%s)" % (type_section_name + ".ptr"),
                      "    *(%s)" % (type_section_name + ".data"),
                      "    *(%s)" % (type_section_name + ".defs"),
                      "}" ]
-        linker_script_addition.extend(additions)
+        linker_script_additions.extend(additions)
 
-    return linker_script_addition
+    linker_script_additions.append("PROVIDE(__type_information_start = .);")
+    linker_script_additions.append("__type_pointers : {")
+    for type_section_name in type_section_names:
+        linker_script_additions.append("    *(%s)" % (type_section_name + ".ptr"))
+
+    linker_script_additions.append("    *(.gnu.linkonce.null_type)")        
+    linker_script_additions.append("}")
+    return linker_script_additions
 
 def add_trace_directives_to_script(internal, linker_script, verbose_output, args):
     linked_objects = get_linked_objects(verbose_output)
@@ -106,12 +110,7 @@ def add_trace_directives_to_script(internal, linker_script, verbose_output, args
         
     ]
 
-    additions.append("PROVIDE(__type_information_start = .);")
     additions.extend(type_information_sections)
-    additions.append(""".gnu.linkonce.null_type : {
-    *(.gnu.linkonce.null_type)
-    }""")
-
     for index, line in enumerate(ldscript):
         if line.startswith(prefix):
             ldscript = ldscript[:index] + additions + ldscript[index:]
@@ -187,7 +186,8 @@ def main():
         ret = spawn(xargs)
         return ret
     finally:
-        os.unlink(script_file)
+        pass
+        #os.unlink(script_file)
 
 
 if __name__ == "__main__":

@@ -108,14 +108,14 @@ static void copy_enum_values_to_allocated_buffer(struct trace_type_definition *t
 static void copy_type_definitions_to_allocated_buffer(struct trace_type_definition *type_definition, struct trace_enum_value *enum_values,
                                                       char **string_table)
 {
-    struct trace_type_definition *type = __type_information_start;
-    while (type) {
-        memcpy(type_definition, type, sizeof(*type_definition));
-        ALLOC_STRING(type_definition->type_name, type->type_name);
+    struct trace_type_definition **type = &__type_information_start;
+    while (*type) {
+        memcpy(type_definition, *type, sizeof(*type_definition));
+        ALLOC_STRING(type_definition->type_name, (*type)->type_name);
         type_definition->enum_values = enum_values;
-        switch (type->type_id) {
+        switch ((*type)->type_id) {
         case TRACE_TYPE_ID_ENUM:
-            copy_enum_values_to_allocated_buffer(type, &enum_values, string_table);
+            copy_enum_values_to_allocated_buffer(*type, &enum_values, string_table);
             break;
         case TRACE_TYPE_ID_RECORD:
             break;
@@ -126,7 +126,7 @@ static void copy_type_definitions_to_allocated_buffer(struct trace_type_definiti
         }
         
         type_definition++;
-        type = *((struct trace_type_definition **) ((char *) type + sizeof(*type)));
+        type++;
     }
 }
 
@@ -219,17 +219,17 @@ static void type_definition_alloc_size(struct trace_type_definition *type, unsig
     }
 }
     
-static void type_alloc_size(struct trace_type_definition *type_start, unsigned int *type_definition_count, unsigned int *enum_value_count,
+static void type_alloc_size(struct trace_type_definition **type_start, unsigned int *type_definition_count, unsigned int *enum_value_count,
                             unsigned int *alloc_size)
 {
     *type_definition_count = 0;
     *enum_value_count = 0;
     
-    struct trace_type_definition *type = (struct trace_type_definition *) type_start;
-    while (type) {
+    struct trace_type_definition **type = type_start;
+    while (*type) {
         (*type_definition_count)++;
-        type_definition_alloc_size(type, enum_value_count, alloc_size);
-        type = *((struct trace_type_definition **) ((char *) type + sizeof(*type_start)));
+        type_definition_alloc_size(*type, enum_value_count, alloc_size);
+        type++;
     }
 }
 
@@ -247,7 +247,7 @@ static void static_log_alloc_size(unsigned int log_descriptor_count, unsigned in
     }
 
     
-    type_alloc_size(__type_information_start, type_definition_count, enum_value_count, alloc_size);
+    type_alloc_size(&__type_information_start, type_definition_count, enum_value_count, alloc_size);
 }
 
 static void map_static_log_data(const char *buffer_name)
