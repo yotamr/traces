@@ -1664,7 +1664,7 @@ static const struct option longopts[] = {
     { "wait-for-server", required_argument, 0, 'a'},
     { "port", required_argument, 0, 't'},
     { "from-end", 0, 0, 'e'},
-    { "passive", 0, 0, 'i'},
+    { "passive", 0, 0, 'u'},
     { "dump-online-statistics", 0, 0, 'v'},
 	{ 0, 0, 0, 0}
 };
@@ -1770,7 +1770,7 @@ static int parse_commandline(struct trace_dumper_configuration_s *conf, int argc
         case 'd':
             conf->debug_online = 1;
             break;
-        case 'i':
+        case 'u':
             conf->info_online = 1;
             break;
         case 'j':
