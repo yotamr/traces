@@ -35,7 +35,7 @@ public:
     other_class *method();
     int something;
     void __repr__ {
-        REPR("FUCK");
+        REPR("some_class()");
     }
 };
 
@@ -53,7 +53,7 @@ int main(void) {
         DEBUG("Oh no");
         WARN(some_str, 100, some_double, 150, 100, 100, 100, 100, some_str, 100, 150, 200, 500, 6710, 1021);
         value = calculate(CALCULATION_TYPE_DECREMENT, value);
-        usleep(1000000);
+        usleep(10000);
     }
 
     return 0;        
