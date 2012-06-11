@@ -497,7 +497,7 @@ do {                                                                            
         const char *fmt_str = _unmodified;                                               \
         typename v;                                                                      \
         v = (*(typename *)pdata);                                                        \
-        memcpy(&v, pdata, sizeof(typename));                                             \
+        pdata += sizeof(v);                                                              \
         if ((param->flags & TRACE_PARAM_FLAG_HEX || parser->always_hex))                 \
             fmt_str = _hex;                                                              \
         else if (param->flags & TRACE_PARAM_FLAG_UNSIGNED)                               \
