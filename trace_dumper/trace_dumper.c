@@ -1985,7 +1985,7 @@ int main(int argc, char **argv)
     }
     
     set_signal_handling();
-    if (!conf->write_to_file && !conf->online && !conf->dump_to_network && !conf->dump_from_network && conf->dump_online_statistics) {
+    if (!conf->write_to_file && !conf->online && !conf->dump_to_network && !conf->dump_from_network && !conf->dump_online_statistics) {
         fprintf(stderr, "Must specify either -w, -o, -c or -v\n");
         print_usage();
         return 1;
