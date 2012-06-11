@@ -1630,7 +1630,6 @@ static const char usage[] = {
     " -p  --pid [pid]                       Attach the specified process                                           \n" \
     " -d  --debug-online                    Display DEBUG records in online mode                                   \n" \
     " -l  --trace-online                    Display function traces in online mode                                 \n" \
-    " -d  --debug-online                    Display DEBUG records in online mode                                   \n" \
     " -u  --info-online                     Display INFO records in online mode                                    \n" \
     " -j  --warn-online                     Display WARN records in online mode                                    \n" \
     " -k  --error-online                    Display ERROR/FATAL records in online mode                             \n" \

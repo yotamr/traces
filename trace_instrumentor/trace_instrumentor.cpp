@@ -243,6 +243,7 @@ bool TraceParam::parseRecordTypeParam(const Expr *expr)
 
 
 bool TraceParam::parseEnumTypeParam(QualType qual_type) {
+    return false;
     if (!qual_type.split().first->isEnumeralType()) {
         return false;
     }
@@ -261,6 +262,7 @@ bool TraceParam::parseEnumTypeParam(QualType qual_type) {
 
 bool TraceParam::parseEnumTypeParam(const Expr *expr) {
     // Enum's are implicitly cast to ints.
+    return false;
     const Expr *stripped_expr = expr->IgnoreImpCasts();
     
     const Type *type = get_expr_type(stripped_expr);
