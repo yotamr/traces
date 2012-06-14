@@ -534,7 +534,6 @@ do {                                                                            
                     SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));                     \
                     SIMPLE_APPEND_FORMATTED_TEXT(delimiter);                             \
                 }                                                                        \
-                continue;                                                                \
             } else {                                                                     \
                 SIMPLE_APPEND_FORMATTED_TEXT("<cstr?>");                                 \
             }
@@ -1557,14 +1556,67 @@ int process_all_metadata(trace_parser_t *parser, trace_parser_event_handler_t ha
     return 0;
 }
 
+
+static int get_minimal_log_id_size(struct trace_parser_buffer_context *context, unsigned int log_id)
+{
+    struct trace_log_descriptor *log_desc;
+    struct trace_param_descriptor *param;
+    int minimal_log_id_size = sizeof(log_id);
+    if (log_id >= context->metadata->log_descriptor_count) {
+        return -1;
+    }
+
+    log_desc = &context->descriptors[log_id];
+
+    for (param = log_desc->params; (param->flags != 0); param++) {
+        if (param->flags & TRACE_PARAM_FLAG_NESTED_LOG) {
+            minimal_log_id_size = sizeof(log_id);
+            continue;
+        }
+
+        if (param->flags & TRACE_PARAM_FLAG_VARRAY) {
+            minimal_log_id_size += 1;
+            continue;
+        }
+        
+        if (param->flags & TRACE_PARAM_FLAG_ENUM) {
+            minimal_log_id_size += sizeof(int);
+            continue;
+        }
+        
+        if (param->flags & TRACE_PARAM_FLAG_NUM_8) {
+            minimal_log_id_size += sizeof(char);
+            continue;
+        }
+        
+        if (param->flags & TRACE_PARAM_FLAG_NUM_16) {
+            minimal_log_id_size += sizeof(short);
+            continue;
+        }
+
+        if (param->flags & TRACE_PARAM_FLAG_NUM_32) {
+            minimal_log_id_size += sizeof(int);
+            continue;
+        }
+
+        if (param->flags & TRACE_PARAM_FLAG_NUM_64) {
+            minimal_log_id_size += sizeof(long long);
+            continue;
+        }        
+    }
+
+    return minimal_log_id_size;
+}
+
 static int log_id_to_log_template(trace_parser_t *parser, struct trace_parser_buffer_context *context, int log_id, char *formatted_record, unsigned int formatted_record_size)
 {
     int total_length = 0;
-
+    unsigned int minimal_log_size = get_minimal_log_id_size(context, log_id);
     if (parser->color) {
-        APPEND_FORMATTED_TEXT(_F_MAGENTA("%-20s") _ANSI_DEFAULTS(" "), context->name);
+        APPEND_FORMATTED_TEXT(_F_MAGENTA("%-20s") _ANSI_DEFAULTS(" [") _F_BLUE_BOLD("%5d") _ANSI_DEFAULTS("] <%03d>:  "),
+                              context->name, context->id, minimal_log_size);
     } else {
-        APPEND_FORMATTED_TEXT("%-20s", context->name);
+        APPEND_FORMATTED_TEXT("%-20s [%5d] (min_size = %3d) ", context->name, context->id, minimal_log_size);
     }
     
 
@@ -1589,7 +1641,7 @@ static void dump_metadata(trace_parser_t *parser, enum trace_parser_event_e even
     char formatted_template[512];
     for (i = 0; i < context->metadata->log_descriptor_count; i++) {
         log_id_to_log_template(parser, context, i, formatted_template, sizeof(formatted_template));
-        printf("(%d) %s\n", i, formatted_template);
+        printf("(%05d) %s\n", i, formatted_template);
     }
 }
 
