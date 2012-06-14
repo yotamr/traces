@@ -289,6 +289,8 @@ static bool traceCallReferenced(std::set<TraceCall *> &traces, std::string trace
     return false;
 }
 
+const char *sev_to_str[] = {"INVALID", "FUNC_TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"};
+    
 std::string TraceCall::getTraceDeclaration()
 {
     std::stringstream params;
@@ -323,6 +325,7 @@ std::string TraceCall::getTraceDeclaration()
     descriptor << params.str() << "};";
     descriptor << "static struct trace_log_descriptor __attribute__((__section__(\".static_log_data\"))) " << trace_call_name << "= { ";
     descriptor << kind;
+    descriptor << ", " << "TRACE_SEV_" << sev_to_str[severity];
     descriptor << + ", " << trace_call_name << "_params };";
     
     return descriptor.str();
@@ -336,8 +339,6 @@ void TraceCall::replaceExpr(const Expr *expr, std::string replacement)
     Rewrite->ReplaceText(expr->getLocStart(), size, replacement);
 }
 
-
-const char *sev_to_str[] = {"INVALID", "FUNC_TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"};
 
 std::string TraceCall::constlength_commitRecord()
 {

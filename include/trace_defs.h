@@ -221,6 +221,7 @@ struct trace_param_descriptor {
 
 struct trace_log_descriptor {
     enum trace_log_descriptor_kind kind;
+    enum trace_severity severity;
     struct trace_param_descriptor *params;
 };
 

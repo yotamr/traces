@@ -740,12 +740,13 @@ static int format_typed_params(trace_parser_t *parser, struct trace_parser_buffe
                                                                                 \
                                                                                 \
     switch (__severity) {                                                        \
-    case TRACE_SEV_FUNC_TRACE: severity_str = F_GREY("-----"); break;           \
-    case TRACE_SEV_DEBUG: severity_str = F_WHITE("DEBUG"); break;               \
-    case TRACE_SEV_INFO: severity_str = F_GREEN_BOLD("INFO "); break;           \
-    case TRACE_SEV_WARN: severity_str = F_YELLOW_BOLD("WARN "); break;          \
-    case TRACE_SEV_ERROR: severity_str = F_RED_BOLD("ERROR"); break;            \
-    case TRACE_SEV_FATAL: severity_str = F_RED_BOLD("FATAL"); break;            \
+    case TRACE_SEV_FUNC_TRACE: str = F_GREY("-----"); break;           \
+    case TRACE_SEV_DEBUG: str = F_WHITE("DEBUG"); break;               \
+    case TRACE_SEV_INFO: str = F_GREEN_BOLD("INFO "); break;           \
+    case TRACE_SEV_WARN: str = F_YELLOW_BOLD("WARN "); break;          \
+    case TRACE_SEV_ERROR: str = F_RED_BOLD("ERROR"); break;            \
+    case TRACE_SEV_FATAL: str = F_RED_BOLD("FATAL"); break;            \
+    case TRACE_SEV_INVALID: str = F_GREY("-----"); break;              \
     default: break;                                                             \
     }
 
@@ -1621,11 +1622,14 @@ static int log_id_to_log_template(trace_parser_t *parser, struct trace_parser_bu
         exact_indicator = "";
     }
     
+    const char *severity;
+    struct trace_log_descriptor *log_desc = &context->descriptors[log_id];
+    FORMAT_SEVERITY(severity, log_desc->severity);
     if (parser->color) {
-        APPEND_FORMATTED_TEXT(_F_MAGENTA("%-20s") _ANSI_DEFAULTS(" [") _F_BLUE_BOLD("%5d") _ANSI_DEFAULTS("] <%03d%-1s>:  "),
-                              context->name, context->id, minimal_log_size, exact_indicator);
+        APPEND_FORMATTED_TEXT(_F_MAGENTA("%-20s") "%s " _ANSI_DEFAULTS("[") _F_BLUE_BOLD("%5d") _ANSI_DEFAULTS("] <%03d%-1s>:  "),
+                              context->name, severity, context->id, minimal_log_size, exact_indicator);
     } else {
-        APPEND_FORMATTED_TEXT("%-20s [%5d] <%03d%-1s>: ", context->name, context->id, minimal_log_size, exact_indicator);
+        APPEND_FORMATTED_TEXT("%-20s %s [%5d] <%03d%-1s>: ", context->name, severity, context->id, minimal_log_size, exact_indicator);
     }
     
 
@@ -1633,6 +1637,7 @@ static int log_id_to_log_template(trace_parser_t *parser, struct trace_parser_bu
     record.log_id = log_id;
     int bytes_processed;
     total_length = format_typed_params(parser, context, &record, formatted_record, formatted_record_size, total_length - 1, &bytes_processed, TRUE);
+
     formatted_record[total_length] = '\0';
 
     return 0;
