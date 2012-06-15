@@ -208,13 +208,13 @@ const char *sev_to_str[] = {
 };
 #undef TRACE_SEV_X
 
-static struct trace_parser_buffer_context *get_buffer_context_by_pid(trace_parser_t *parser, unsigned short pid)
+static struct trace_parser_buffer_context *get_buffer_context_by_pid_and_obj_key(trace_parser_t *parser, unsigned short pid, unsigned int obj_key)
 {
     int i;
     struct trace_parser_buffer_context *context;
     for (i = 0; i < BufferParseContextList__element_count(&parser->buffer_contexts); i++) {
         BufferParseContextList__get_element_ptr(&parser->buffer_contexts, i, &context);
-        if (context->id == pid) {
+        if (context->pid == pid && context->obj_key == obj_key) {
             return context;
         }
     }
@@ -222,13 +222,13 @@ static struct trace_parser_buffer_context *get_buffer_context_by_pid(trace_parse
     return NULL;
 }
 
-static int free_buffer_context_by_pid(trace_parser_t *parser, unsigned short pid)
+static int free_buffer_context_by_pid_and_obj_key(trace_parser_t *parser, unsigned short pid, unsigned int obj_key)
 {
     int i;
     struct trace_parser_buffer_context *context;
     for (i = 0; i < BufferParseContextList__element_count(&parser->buffer_contexts); i++) {
         BufferParseContextList__get_element_ptr(&parser->buffer_contexts, i, &context);
-        if (context->id == pid) {
+        if (context->pid == pid && context->obj_key == obj_key) {
             free(context->metadata);
             BufferParseContextList__remove_element(&parser->buffer_contexts, i);
             return 0;
@@ -240,14 +240,15 @@ static int free_buffer_context_by_pid(trace_parser_t *parser, unsigned short pid
 
 static int metadata_info_started(trace_parser_t *parser, struct trace_record *rec)
 {
-    struct trace_parser_buffer_context *context = get_buffer_context_by_pid(parser, rec->pid);
+    struct trace_parser_buffer_context *context = get_buffer_context_by_pid_and_obj_key(parser, rec->pid, rec->obj_key);
 
     if (context) {        
-        free_buffer_context_by_pid(parser, rec->pid);
+        free_buffer_context_by_pid_and_obj_key(parser, rec->pid, rec->obj_key);
     }
 
     struct trace_parser_buffer_context new_context;
-    new_context.id = rec->pid;
+    new_context.pid = rec->pid;
+    new_context.obj_key = rec->obj_key;
     new_context.metadata_size = rec->u.metadata.metadata_size_bytes;
     if (new_context.metadata_size > MAX_METADATA_SIZE) {
         return -1;
@@ -277,7 +278,7 @@ static int append_metadata(struct trace_parser_buffer_context *context, struct t
 
 static int accumulate_metadata(trace_parser_t *parser, struct trace_record *rec, trace_parser_event_handler_t handler, void *arg)
 {
-    struct trace_parser_buffer_context *context = get_buffer_context_by_pid(parser, rec->pid);
+    struct trace_parser_buffer_context *context = get_buffer_context_by_pid_and_obj_key(parser, rec->pid, rec->obj_key);
     if (NULL == context) {
         return 0;
     }
@@ -530,10 +531,6 @@ do {                                                                            
                     SIMPLE_APPEND_FORMATTED_TEXT(param->const_str);                      \
                 }                                                                        \
                                                                                          \
-                if ((param + 1)->flags != 0) {                                           \
-                    SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));                     \
-                    SIMPLE_APPEND_FORMATTED_TEXT(delimiter);                             \
-                }                                                                        \
             } else {                                                                     \
                 SIMPLE_APPEND_FORMATTED_TEXT("<cstr?>");                                 \
             }
@@ -562,7 +559,6 @@ do {                                                                            
                     SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD(""));                       \
                     SIMPLE_APPEND_FORMATTED_TEXT("\"");                                  \
                     SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));                     \
-                    SIMPLE_APPEND_FORMATTED_TEXT(delimiter);                             \
                 }                                                                        \
                 if (!continuation) {                                                     \
                     break;                                                               \
@@ -817,7 +813,7 @@ static int process_typed_record(trace_parser_t *parser, bool_t accumulate_forwar
         return -1;
     }
 
-    *buffer = get_buffer_context_by_pid(parser, complete_record->pid);
+    *buffer = get_buffer_context_by_pid_and_obj_key(parser, complete_record->pid, complete_record->obj_key);
     complete_record->termination |= TRACE_TERMINATION_LAST;
     *out_record = complete_record;
 
@@ -920,7 +916,7 @@ Exit:
 
 static int process_metadata_if_needed(trace_parser_t *parser, struct trace_record *record)
 {
-    if (NULL != get_buffer_context_by_pid(parser, record->pid)) {
+    if (NULL != get_buffer_context_by_pid_and_obj_key(parser, record->pid, record->obj_key)) {
         return 0;
     }
 
@@ -1047,7 +1043,7 @@ static int process_dump_header_record(trace_parser_t *parser, struct trace_recor
             return -1;
         }
 
-        struct trace_parser_buffer_context *buffer_context = get_buffer_context_by_pid(parser, tmp_record.pid);
+        struct trace_parser_buffer_context *buffer_context = get_buffer_context_by_pid_and_obj_key(parser, tmp_record.pid, tmp_record.obj_key);
         if (NULL == buffer_context) {
             return -1;
         }
@@ -1623,12 +1619,11 @@ static int log_id_to_log_template(trace_parser_t *parser, struct trace_parser_bu
     
     if (parser->color) {
         APPEND_FORMATTED_TEXT(_F_MAGENTA("%-20s") _ANSI_DEFAULTS(" [") _F_BLUE_BOLD("%5d") _ANSI_DEFAULTS("] <%03d%-1s>:  "),
-                              context->name, context->id, minimal_log_size, exact_indicator);
+                              context->name, context->pid, minimal_log_size, exact_indicator);
     } else {
-        APPEND_FORMATTED_TEXT("%-20s [%5d] <%03d%-1s>: ", context->name, context->id, minimal_log_size, exact_indicator);
+        APPEND_FORMATTED_TEXT("%-20s [%5d] <%03d%-1s>: ", context->name, context->pid, minimal_log_size, exact_indicator);
     }
     
-
     struct trace_record_typed record;
     record.log_id = log_id;
     int bytes_processed;

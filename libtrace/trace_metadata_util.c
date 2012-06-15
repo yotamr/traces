@@ -36,6 +36,7 @@ static void relocate_descriptor_parameters(void *old_base, void *new_base, struc
 
         if (param->str) {
             relocate_ptr((unsigned long long) old_base, (unsigned long long) new_base, (unsigned long long *) &param->str);
+            printf("Str: %s %p %p\n", param->str, param->str, new_base);
         }
 
         if (param->param_name) {

@@ -7,7 +7,9 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_SRC_FILES := \
 	trace_user_stubs.c \
 	filesystem.c \
+    ../libtrace/shm_files.c \
 	trace_dumper.c
+
 
 LOCAL_C_INCLUDES := external/traces/include
 LOCAL_STATIC_LIBRARIES=libtrace_parser

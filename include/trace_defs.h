@@ -47,6 +47,8 @@ TRACE_SEVERITY_DEF
 #undef TRACE_SEV_X
 };
 
+#define TRACE_MAX_OBJS_PER_PROCESS (1 << 4)
+
 static inline int trace_strcmp(const char *s1, const char *s2)
 {
     /* Move s1 and s2 to the first differing characters 
@@ -150,7 +152,8 @@ struct trace_record {
     unsigned short int tid;
     short nesting;
     unsigned termination:2;
-    unsigned reserved:6;
+    unsigned obj_key:4;
+    unsigned reserved:2;
     unsigned severity:4;
     unsigned rec_type:4;
     unsigned int generation;
@@ -226,6 +229,7 @@ struct trace_log_descriptor {
 
 struct trace_metadata_region {
     char name[0x100];
+    unsigned int obj_key;
     void *base_address;
     unsigned long log_descriptor_count;
     unsigned long type_definition_count;

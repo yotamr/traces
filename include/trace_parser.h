@@ -34,7 +34,8 @@ struct trace_parser_buffer_context {
     struct trace_log_descriptor *descriptors;
     struct trace_type_definition *types;
     char name[0x100];
-    unsigned int id;
+    unsigned int pid;
+    unsigned int obj_key;
 };
 
 #define MAX_ACCUMULATORS (100)

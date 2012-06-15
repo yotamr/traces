@@ -1,4 +1,5 @@
 #include "trace_user.h"
+#include "shared-demo.h"
 #include <unistd.h>
 #include <stdio.h>
 enum calculation_type {
@@ -53,6 +54,8 @@ int main(void) {
         DEBUG("Oh no");
         WARN(some_str, 100, 150, 100, 100, 100, 100, some_str, 100, 150, 200, 500, 6710, 1021);
         value = calculate(CALCULATION_TYPE_DECREMENT, value);
+        func_1(5);
+        func_2(7);
         usleep(10000);
     }
 

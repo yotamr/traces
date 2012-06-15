@@ -34,13 +34,12 @@
 #include "array_length.h"
 #include "trace_lib.h"
 #include "trace_user.h"
-
+#include "shm_files.h"
 
 #define COLOR_BOOL conf->color
 #include "colors.h"
 
 #define MAX_FILTER_SIZE (10)
-#define METADATA_IOVEC_SIZE 2*(MAX_METADATA_SIZE/TRACE_RECORD_PAYLOAD_SIZE+1)
 
 // The threshold stands at about 60 MBps
 #define OVERWRITE_THRESHOLD_PER_SECOND (600000)
@@ -48,13 +47,14 @@
 #define RELAXATION_BACKOFF (TRACE_SECOND * 10)
 
 struct trace_mapped_metadata {
-    struct iovec metadata_iovec[METADATA_IOVEC_SIZE];
     struct trace_record metadata_payload_record;
     unsigned long log_descriptor_count;
     unsigned long type_definition_count;
     unsigned int size;
     void *base_address;
+    unsigned int obj_key;
     struct trace_log_descriptor *descriptors;
+    struct iovec *metadata_iovec;
 };
     
 struct trace_mapped_records {
@@ -75,6 +75,9 @@ struct trace_mapped_records {
 #define TRACE_BUFNAME_LEN (0x100)
 #define MAX_BUFFER_COUNT (10)
 
+CREATE_LIST_PROTOTYPE(MetadataList, struct trace_mapped_metadata);
+CREATE_LIST_IMPLEMENTATION(MetadataList, struct trace_mapped_metadata);
+
 struct trace_mapped_buffer {
     char name[TRACE_BUFNAME_LEN];
     void *records_buffer_base_address;
@@ -82,7 +85,7 @@ struct trace_mapped_buffer {
     unsigned long last_metadata_offset;
     bool_t metadata_dumped;
     struct trace_mapped_records mapped_records[TRACE_BUFFER_NUM_RECORDS];
-    struct trace_mapped_metadata metadata;
+    MetadataList metadata_list;
     unsigned short pid;
     unsigned int dead;
 };
@@ -176,6 +179,11 @@ bool_t is_trace_shm_region(const char *shm_name)
     } else {
         return FALSE;
     }
+}
+
+unsigned int get_metadata_iovec_size(unsigned metadata_size)
+{
+    return 2 * (metadata_size / TRACE_RECORD_PAYLOAD_SIZE + 1);
 }
 
 pid_t get_pid_from_shm_name(const char *shm_name)
@@ -278,6 +286,13 @@ static void dump_online_statistics(struct trace_dumper_configuration_s *conf)
         
         printf(_F_MAGENTA("%-16s") _F_GREEN("%-24s") _ANSI_DEFAULTS("[") _F_YELLOW_BOLD("%d") _ANSI_DEFAULTS("]") _ANSI_DEFAULTS("[") _F_BLUE_BOLD("%07x") _ANSI_DEFAULTS("/") _F_BLUE_BOLD("%07x") _ANSI_DEFAULTS("]") "    (%s" _ANSI_DEFAULTS(")") _ANSI_DEFAULTS(" ") "(%s) \n", mapped_buffer->name, severity_type_str, mapped_buffer->pid, unflushed_records, mapped_records->imutab->max_records, formatted_usage, display_bar);
     }
+}
+
+unsigned long long trace_get_nsec(void)
+{
+     struct timespec tv;
+     clock_gettime(CLOCK_REALTIME, &tv);
+     return ((unsigned long long) tv.tv_sec * 1000000000) + tv.tv_nsec;
 }
 
 #define STATS_DUMP_DELTA (TRACE_SECOND * 3)
@@ -449,10 +464,12 @@ static void init_metadata_iovector(struct trace_mapped_metadata *metadata, unsig
     metadata->metadata_payload_record.rec_type = TRACE_REC_TYPE_METADATA_PAYLOAD;
     metadata->metadata_payload_record.termination = 0;
     metadata->metadata_payload_record.pid = pid;
+    metadata->metadata_payload_record.obj_key = metadata->obj_key;
     
     unsigned long remaining_length = metadata->size;
     unsigned int i;
-    for (i = 0; i < TRACE_METADATA_IOVEC_SIZE / 2; i++) {
+    unsigned iovec_size = get_metadata_iovec_size(metadata->size);
+    for (i = 0; i < iovec_size / 2; i++) {
         if (remaining_length <= 0) {
             break;
         }
@@ -468,7 +485,7 @@ static void init_metadata_iovector(struct trace_mapped_metadata *metadata, unsig
                                                                         \
         struct iovec __iov__ = {__data__, __size__}; rc = trace_dumper_write(conf, &conf->record_file, &__iov__, 1, TRUE); } while (0);
 
-static int write_metadata_header_start(struct trace_dumper_configuration_s *conf, struct trace_mapped_buffer *mapped_buffer)
+static int write_metadata_header_start(struct trace_dumper_configuration_s *conf, struct trace_mapped_buffer *mapped_buffer, struct trace_mapped_metadata *mapped_metadata)
 {
     struct trace_record rec;
     int rc;
@@ -476,7 +493,9 @@ static int write_metadata_header_start(struct trace_dumper_configuration_s *conf
     rec.termination = TRACE_TERMINATION_FIRST;
     rec.pid = mapped_buffer->pid;
     rec.ts = trace_get_nsec();
-    rec.u.metadata.metadata_size_bytes = mapped_buffer->metadata.size;
+    rec.u.metadata.metadata_size_bytes = mapped_metadata->size;
+    printf("Object key %d\n", mapped_metadata->obj_key);
+    rec.obj_key = mapped_metadata->obj_key;
     SIMPLE_WRITE(conf, &rec, sizeof(rec));
     if (rc != sizeof(rec)) {
         return -1;
@@ -486,7 +505,7 @@ static int write_metadata_header_start(struct trace_dumper_configuration_s *conf
 }
 
 
-static int write_metadata_end(struct trace_dumper_configuration_s *conf, struct trace_mapped_buffer *mapped_buffer)
+static int write_metadata_end(struct trace_dumper_configuration_s *conf, struct trace_mapped_buffer *mapped_buffer, struct trace_mapped_metadata *mapped_metadata)
 {
     struct trace_record rec;
     int rc;
@@ -495,6 +514,7 @@ static int write_metadata_end(struct trace_dumper_configuration_s *conf, struct 
 	rec.termination = TRACE_TERMINATION_LAST;
     rec.pid = mapped_buffer->pid;
     rec.ts = trace_get_nsec();
+    rec.obj_key = mapped_metadata->obj_key;
     SIMPLE_WRITE(conf, &rec, sizeof(rec));
     if (rc != sizeof(rec)) {
         return -1;
@@ -503,47 +523,28 @@ static int write_metadata_end(struct trace_dumper_configuration_s *conf, struct 
     return 0;
 }
 
-static int trace_dump_metadata(struct trace_dumper_configuration_s *conf, struct trace_mapped_buffer *mapped_buffer)
+static int trace_dump_metadata(struct trace_dumper_configuration_s *conf, struct trace_mapped_buffer *mapped_buffer, struct trace_mapped_metadata *mapped_metadata)
 {
     struct trace_record rec;
     unsigned int num_records;
     int rc;
 
-    mapped_buffer->metadata.metadata_payload_record.ts = trace_get_nsec();
+    mapped_metadata->metadata_payload_record.ts = trace_get_nsec();
 
     memset(&rec, 0, sizeof(rec));
-    rc = write_metadata_header_start(conf, mapped_buffer);
+    rc = write_metadata_header_start(conf, mapped_buffer, mapped_metadata);
     if (0 != rc) {
         return -1;
     } else {
     }
     
-    num_records = mapped_buffer->metadata.size / (TRACE_RECORD_PAYLOAD_SIZE) + ((mapped_buffer->metadata.size % (TRACE_RECORD_PAYLOAD_SIZE)) ? 1 : 0);
-    rc = trace_dumper_write(conf, &conf->record_file, mapped_buffer->metadata.metadata_iovec, 2 * num_records, TRUE);
+    num_records = mapped_metadata->size / (TRACE_RECORD_PAYLOAD_SIZE) + ((mapped_metadata->size % (TRACE_RECORD_PAYLOAD_SIZE)) ? 1 : 0);
+    rc = trace_dumper_write(conf, &conf->record_file, mapped_metadata->metadata_iovec, 2 * num_records, TRUE);
     if ((unsigned int) rc != num_records * sizeof(struct trace_record)) {
         return -1;
     }
 
-    rc = write_metadata_end(conf, mapped_buffer);
-    return rc;
-}
-
-static int delete_shm_files(unsigned short pid)
-{
-    INFO("Deleting shm files for pid", pid);
-    char dynamic_trace_filename[0x100];
-    char static_log_data_filename[0x100];
-    char full_dynamic_trace_filename[0x100];
-    char full_static_log_data_filename[0x100];
-    int rc;
-    snprintf(dynamic_trace_filename, sizeof(dynamic_trace_filename), "_trace_shm_%d_dynamic_trace_data", pid);
-    snprintf(static_log_data_filename, sizeof(static_log_data_filename), "_trace_shm_%d_static_trace_metadata", pid);
-    snprintf(full_dynamic_trace_filename, sizeof(full_dynamic_trace_filename), "%s/%s", SHM_PATH, dynamic_trace_filename);
-    snprintf(full_static_log_data_filename, sizeof(full_static_log_data_filename), "%s/%s", SHM_PATH, static_log_data_filename);
-
-    rc = unlink(full_dynamic_trace_filename);
-    rc |= unlink(full_static_log_data_filename);
-
+    rc = write_metadata_end(conf, mapped_buffer, mapped_metadata);
     return rc;
 }
 
@@ -593,30 +594,135 @@ static unsigned int smallest_ts_record(struct trace_dumper_configuration_s *conf
 
     return min_record;
 }
+
+static int open_trace_metadata_shm_file(int pid, int obj_key, long long *metadata_size)
+{
+    char static_log_data_filename[0x100];
+    char full_static_log_data_filename[0x100];
+    
+    snprintf(static_log_data_filename, sizeof(static_log_data_filename), "_trace_shm_%d_%d_static_trace_metadata", pid, obj_key);
+    snprintf(full_static_log_data_filename, sizeof(full_static_log_data_filename), "%s/%s", SHM_PATH, static_log_data_filename);
+    *metadata_size = get_file_size(full_static_log_data_filename);
+    if ((*metadata_size) < 0) {
+        return -1;
+    }
+    return open(full_static_log_data_filename, O_RDWR);
+}
+
+
+static int map_single_metadata_region(struct trace_mapped_buffer *mapped_buffer, int pid, int fd, long long size)
+{
+    unsigned int rc = 0;
+    if (size > MAX_METADATA_SIZE) {
+        ERROR("Error, metadata size", size, "is too large");
+        return -1;
+    }
+    
+    void * mapped_static_log_data_addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if ((void *)-1 == mapped_static_log_data_addr) {
+        printf("error: %s\n", strerror(errno));
+        ERROR("Unable to map static log area: %s", strerror(errno));
+        goto exit;
+    }
+
+    struct trace_metadata_region *static_log_data_region = (struct trace_metadata_region *) mapped_static_log_data_addr;
+    if (0 != MetadataList__allocate_element(&mapped_buffer->metadata_list)) {
+        rc = -1;
+        goto unmap;
+    }
+
+    struct trace_mapped_metadata *new_mapped_metadata;
+    MetadataList__get_element_ptr(&mapped_buffer->metadata_list, MetadataList__element_count(&mapped_buffer->metadata_list) - 1, &new_mapped_metadata);
+    new_mapped_metadata->log_descriptor_count = static_log_data_region->log_descriptor_count;
+    new_mapped_metadata->type_definition_count = static_log_data_region->type_definition_count;
+    new_mapped_metadata->descriptors = (struct trace_log_descriptor *) static_log_data_region->data;
+    new_mapped_metadata->size = size;
+    new_mapped_metadata->obj_key = static_log_data_region->obj_key;
+    new_mapped_metadata->base_address = mapped_static_log_data_addr;
+    relocate_metadata(static_log_data_region->base_address, mapped_static_log_data_addr, (char *) new_mapped_metadata->descriptors,
+                      new_mapped_metadata->log_descriptor_count, new_mapped_metadata->type_definition_count);
+    static_log_data_region->base_address = mapped_static_log_data_addr;
+    new_mapped_metadata->metadata_iovec = (struct iovec *) malloc(get_metadata_iovec_size(size) * sizeof(struct iovec));
+    init_metadata_iovector(new_mapped_metadata, pid);
+    if (NULL == new_mapped_metadata->metadata_iovec) {
+        rc = -1;
+        goto release_allocated_metadata;
+    }
+
+    strncpy(mapped_buffer->name, static_log_data_region->name, sizeof(mapped_buffer->name));
+    rc = 0;
+    goto exit;
+release_allocated_metadata:
+    free(new_mapped_metadata->metadata_iovec);
+    MetadataList__remove_element(&mapped_buffer->metadata_list, MetadataList__element_count(&mapped_buffer->metadata_list) - 1);
+unmap:
+    munmap(static_log_data_region, size);
+exit:
+    return rc;
+}
+
+static void free_metadata_regions(struct trace_mapped_buffer *mapped_buffer)
+{
+    unsigned int i;
+    for (i = 0; i < MetadataList__element_count(&mapped_buffer->metadata_list); i++) {
+        struct trace_mapped_metadata *mapped_metadata;
+        MetadataList__get_element_ptr(&mapped_buffer->metadata_list, i, &mapped_metadata);
+        int rc = munmap(mapped_metadata->base_address, mapped_metadata->size);
+        if (0 != rc) {
+            ERROR("Error unmapping metadata for buffer", mapped_buffer->name);
+            return;
+        }
+        free(mapped_metadata->metadata_iovec);
+    }
+
+    MetadataList__init(&mapped_buffer->metadata_list);
+}
+
+static int map_metadata_regions(struct trace_mapped_buffer *mapped_buffer, int pid)
+{
+    MetadataList__init(&mapped_buffer->metadata_list);
+    unsigned int i;
+    int fd;
+    int rc;
+    for (i = 0; i < TRACE_MAX_OBJS_PER_PROCESS; i++) {
+        long long metadata_size;
+        fd = open_trace_metadata_shm_file(pid, i, &metadata_size);
+        if (fd < 0) {
+            if (errno == ENOENT) {
+                rc = 0;
+                break;
+            } else {
+                rc = -1;
+                break;
+            }
+        }
+
+        rc = map_single_metadata_region(mapped_buffer, pid, fd, metadata_size);
+        if (0 != rc) {
+            rc = -1;
+        }
+    }
+
+    if (0 != rc) {
+        free_metadata_regions(mapped_buffer);
+    }
+    
+    return rc;
+}
+
 static int map_buffer(struct trace_dumper_configuration_s *conf, pid_t pid)
 {
-    int static_fd, dynamic_fd;
+    int dynamic_fd;
     char dynamic_trace_filename[0x100];
-    char static_log_data_filename[0x100];
     char full_dynamic_trace_filename[0x100];
-    char full_static_log_data_filename[0x100];
     int rc;
     unsigned int dead = 0;
     snprintf(dynamic_trace_filename, sizeof(dynamic_trace_filename), "_trace_shm_%d_dynamic_trace_data", pid);
-    snprintf(static_log_data_filename, sizeof(static_log_data_filename), "_trace_shm_%d_static_trace_metadata", pid);
     snprintf(full_dynamic_trace_filename, sizeof(full_dynamic_trace_filename), "%s/%s", SHM_PATH, dynamic_trace_filename);
-    snprintf(full_static_log_data_filename, sizeof(full_static_log_data_filename), "%s/%s", SHM_PATH, static_log_data_filename);
 
     int trace_region_size = get_file_size(full_dynamic_trace_filename);
     if (trace_region_size <= 0) {
         ERROR("Unable to read region size");
-        rc = -1;
-        goto delete_shm_files;
-    }
-
-   int static_log_data_region_size = get_file_size(full_static_log_data_filename);
-    if (static_log_data_region_size <= 0) {
-        ERROR("Unable to read static region size: %s", static_log_data_filename);
         rc = -1;
         goto delete_shm_files;
     }
@@ -628,14 +734,6 @@ static int map_buffer(struct trace_dumper_configuration_s *conf, pid_t pid)
         goto delete_shm_files;
     }
     
-    static_fd = open(full_static_log_data_filename, O_RDWR, 0);
-    if (static_fd < 0) {
-        ERROR("Unable to open static buffer: %s", strerror(errno));
-        rc = -1;
-        goto close_static;
-
-    }
-
     void *mapped_dynamic_addr = mmap(NULL, trace_region_size, PROT_READ | PROT_WRITE, MAP_SHARED, dynamic_fd, 0);
     if (NULL == mapped_dynamic_addr) {
         ERROR("Unable to map log information buffer");
@@ -644,46 +742,24 @@ static int map_buffer(struct trace_dumper_configuration_s *conf, pid_t pid)
 
     }
     
-    void * mapped_static_log_data_addr = mmap(NULL, static_log_data_region_size, PROT_READ | PROT_WRITE, MAP_SHARED, static_fd, 0);
-
-    if (NULL == mapped_static_log_data_addr) {
-        ERROR("Unable to map static log area: %s", strerror(errno));
-        rc = -1;
-        goto unmap_dynamic;
-    }
-    
     struct trace_buffer *unmapped_trace_buffer = (struct trace_buffer *) mapped_dynamic_addr;
     struct trace_mapped_buffer *new_mapped_buffer;
-    struct trace_metadata_region *static_log_data_region = (struct trace_metadata_region *) mapped_static_log_data_addr;
-    
-    if (trace_should_filter(conf, static_log_data_region->name)) {
-        rc = 0;
-        INFO("Filtering buffer", static_log_data_region->name);
-        goto unmap_static;
-
-    }
-    
     if (0 != MappedBuffers__allocate_element(&conf->mapped_buffers)) {
         rc = -1;
-        goto unmap_static;
+        goto unmap_dynamic;
         return -1;
     }
 
     MappedBuffers__get_element_ptr(&conf->mapped_buffers, MappedBuffers__element_count(&conf->mapped_buffers) - 1, &new_mapped_buffer);
     memset(new_mapped_buffer, 0, sizeof(*new_mapped_buffer));
-    if (static_log_data_region_size > MAX_METADATA_SIZE) {
-        ERROR("Error, metadata size %x too large", static_log_data_region_size);
-        rc = -1;
-        goto unmap_static;
-    }
-
     new_mapped_buffer->records_buffer_base_address = mapped_dynamic_addr;
     new_mapped_buffer->records_buffer_size = trace_region_size;
-    new_mapped_buffer->metadata.log_descriptor_count = static_log_data_region->log_descriptor_count;
-    new_mapped_buffer->metadata.type_definition_count = static_log_data_region->type_definition_count;
-    new_mapped_buffer->metadata.descriptors = (struct trace_log_descriptor *) static_log_data_region->data;
-    new_mapped_buffer->metadata.size = static_log_data_region_size;
-    new_mapped_buffer->metadata.base_address = mapped_static_log_data_addr;
+
+    rc = map_metadata_regions(new_mapped_buffer, pid);
+    if (0 != rc) {
+        goto free_mapped_buffer;
+    }
+    
     new_mapped_buffer->pid = (unsigned short) pid;
     new_mapped_buffer->metadata_dumped = FALSE;
     if (!process_exists(pid)) {
@@ -692,11 +768,6 @@ static int map_buffer(struct trace_dumper_configuration_s *conf, pid_t pid)
         dead = 1;
     }
 
-    relocate_metadata(static_log_data_region->base_address, mapped_static_log_data_addr, (char *) new_mapped_buffer->metadata.descriptors,
-                      new_mapped_buffer->metadata.log_descriptor_count, new_mapped_buffer->metadata.type_definition_count);
-    static_log_data_region->base_address = mapped_static_log_data_addr;
-    init_metadata_iovector(&new_mapped_buffer->metadata, new_mapped_buffer->pid);
-    strncpy(new_mapped_buffer->name, static_log_data_region->name, sizeof(new_mapped_buffer->name));
     unsigned int i;
     for (i = 0; i < TRACE_BUFFER_NUM_RECORDS; i++) {
         struct trace_mapped_records *mapped_records;
@@ -716,15 +787,13 @@ static int map_buffer(struct trace_dumper_configuration_s *conf, pid_t pid)
     INFO("new process joined" ,"pid =", new_mapped_buffer->pid, "name =", new_mapped_buffer->name);
     rc = 0;
     goto exit;
+
+free_mapped_buffer:
     MappedBuffers__remove_element(&conf->mapped_buffers, MappedBuffers__element_count(&conf->mapped_buffers) - 1);
-unmap_static:
-    munmap(mapped_static_log_data_addr, static_log_data_region_size);
 unmap_dynamic:
     munmap(mapped_dynamic_addr, trace_region_size);
 close_dynamic:
     close(dynamic_fd);
-close_static:
-    close(static_fd);
 delete_shm_files:
     delete_shm_files(pid);
 exit:
@@ -919,13 +988,11 @@ static int delete_oldest_trace_file(struct trace_dumper_configuration_s *conf)
 
 static void discard_buffer(struct trace_dumper_configuration_s *conf, struct trace_mapped_buffer *mapped_buffer)
 {
+    unsigned int i;
+    int rc;
     INFO("Discarding pid", mapped_buffer->pid, mapped_buffer->name);
-    int rc = munmap(mapped_buffer->metadata.base_address, mapped_buffer->metadata.size);
-    if (0 != rc) {
-        ERROR("Error unmapping metadata for buffer", mapped_buffer->name);
-        return;
-    }
 
+    free_metadata_regions(mapped_buffer);
     rc = munmap(mapped_buffer->records_buffer_base_address, mapped_buffer->records_buffer_size);
     if (0 != rc) {
         ERROR("Error unmapping records for buffer", mapped_buffer->name);
@@ -934,7 +1001,6 @@ static void discard_buffer(struct trace_dumper_configuration_s *conf, struct tra
 
     delete_shm_files(mapped_buffer->pid);
     struct trace_mapped_buffer *tmp_mapped_buffer;
-    int i;
     for_each_mapped_buffer(i, tmp_mapped_buffer) {
         if (mapped_buffer == tmp_mapped_buffer) {
             MappedBuffers__remove_element(&conf->mapped_buffers, i);
@@ -1159,13 +1225,18 @@ static void init_dump_header(struct trace_dumper_configuration_s *conf, struct t
 
 static int dump_metadata_if_necessary(struct trace_dumper_configuration_s *conf, struct trace_mapped_buffer *mapped_buffer)
 {
+    unsigned int i;
     if (!mapped_buffer->metadata_dumped) {
         mapped_buffer->last_metadata_offset = conf->record_file.records_written;
-        int rc = trace_dump_metadata(conf, mapped_buffer);
-        if (0 != rc) {
-            ERROR("Error dumping metadata");
-            mapped_buffer->last_metadata_offset = -1;
-            return -1;
+        for (i = 0; i < MetadataList__element_count(&mapped_buffer->metadata_list); i++) {
+            struct trace_mapped_metadata *mapped_metadata;
+            MetadataList__get_element_ptr(&mapped_buffer->metadata_list, i, &mapped_metadata);
+            int rc = trace_dump_metadata(conf, mapped_buffer, mapped_metadata);
+            if (0 != rc) {
+                ERROR("Error dumping metadata");
+                mapped_buffer->last_metadata_offset = -1;
+                return -1;
+            }
         }
     }
     

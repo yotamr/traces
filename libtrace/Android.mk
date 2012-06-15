@@ -23,6 +23,7 @@ LOCAL_C_INCLUDES := external/traces/include
 LOCAL_SRC_FILES := \
 	trace_metadata_util.c \
 	halt.c \
+	shm_files.c \
 	trace_user.c
 
 include $(BUILD_STATIC_LIBRARY)

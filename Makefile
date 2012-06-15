@@ -13,7 +13,7 @@ libtraceuser: libtraceuser.a
 simple_trace_reader: trace_reader/simple_trace_reader
 interactive_reader: interactive_reader/_trace_parser_ctypes.py
 
-LIBTRACEUSER_FILES:=trace_metadata_util halt trace_user
+LIBTRACEUSER_FILES:=trace_metadata_util shm_files halt trace_user
 LIBTRACE_FILES:=trace_metadata_util halt cached_file trace_parser
 LIBTRACE_OBJS=$(LIBTRACE_FILES:%=libtrace/%.o)
 LIBTRACEUSER_OBJS=$(LIBTRACEUSER_FILES:%=libtrace/%.o)
@@ -22,8 +22,8 @@ libtrace.a traces.so: $(LIBTRACE_OBJS)
 	ar rcs libtrace.a $^
 	gcc -shared -g -o traces.so $^
 
-trace_dumper/trace_dumper: $(LIBTRACE_OBJS) trace_dumper/trace_dumper.o trace_dumper/filesystem.o trace_dumper/trace_user_stubs.o
-	gcc -L.  trace_dumper/filesystem.o trace_dumper/trace_dumper.o trace_dumper/trace_user_stubs.o -ltrace  -o trace_dumper/trace_dumper -lrt
+trace_dumper/trace_dumper: $(LIBTRACE_OBJS) libtrace/shm_files.o trace_dumper/trace_dumper.o trace_dumper/filesystem.o trace_dumper/trace_user_stubs.o
+	gcc -L.  trace_dumper/filesystem.o libtrace/shm_files.o trace_dumper/trace_dumper.o trace_dumper/trace_user_stubs.o -ltrace  -o trace_dumper/trace_dumper -lrt
 
 libtraceuser.a: $(LIBTRACEUSER_OBJS)
 	ar rcs libtraceuser.a $^
