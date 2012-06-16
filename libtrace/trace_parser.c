@@ -1557,7 +1557,7 @@ int process_all_metadata(trace_parser_t *parser, trace_parser_event_handler_t ha
 }
 
 
-static int get_minimal_log_id_size(struct trace_parser_buffer_context *context, unsigned int log_id)
+static int get_minimal_log_id_size(struct trace_parser_buffer_context *context, unsigned int log_id, bool_t *exact_size)
 {
     struct trace_log_descriptor *log_desc;
     struct trace_param_descriptor *param;
@@ -1568,14 +1568,17 @@ static int get_minimal_log_id_size(struct trace_parser_buffer_context *context, 
 
     log_desc = &context->descriptors[log_id];
 
+    *exact_size = TRUE;
     for (param = log_desc->params; (param->flags != 0); param++) {
         if (param->flags & TRACE_PARAM_FLAG_NESTED_LOG) {
             minimal_log_id_size = sizeof(log_id);
+            *exact_size = FALSE;
             continue;
         }
 
         if (param->flags & TRACE_PARAM_FLAG_VARRAY) {
             minimal_log_id_size += 1;
+            *exact_size = FALSE;
             continue;
         }
         
@@ -1611,12 +1614,18 @@ static int get_minimal_log_id_size(struct trace_parser_buffer_context *context, 
 static int log_id_to_log_template(trace_parser_t *parser, struct trace_parser_buffer_context *context, int log_id, char *formatted_record, unsigned int formatted_record_size)
 {
     int total_length = 0;
-    unsigned int minimal_log_size = get_minimal_log_id_size(context, log_id);
+    bool_t exact_size;
+    const char *exact_indicator = "*";
+    unsigned int minimal_log_size = get_minimal_log_id_size(context, log_id, &exact_size);
+    if (!exact_size) {
+        exact_indicator = "";
+    }
+    
     if (parser->color) {
-        APPEND_FORMATTED_TEXT(_F_MAGENTA("%-20s") _ANSI_DEFAULTS(" [") _F_BLUE_BOLD("%5d") _ANSI_DEFAULTS("] <%03d>:  "),
-                              context->name, context->id, minimal_log_size);
+        APPEND_FORMATTED_TEXT(_F_MAGENTA("%-20s") _ANSI_DEFAULTS(" [") _F_BLUE_BOLD("%5d") _ANSI_DEFAULTS("] <%03d%-1s>:  "),
+                              context->name, context->id, minimal_log_size, exact_indicator);
     } else {
-        APPEND_FORMATTED_TEXT("%-20s [%5d] (min_size = %3d) ", context->name, context->id, minimal_log_size);
+        APPEND_FORMATTED_TEXT("%-20s [%5d] <%03d%-1s>: ", context->name, context->id, minimal_log_size, exact_indicator);
     }
     
 
