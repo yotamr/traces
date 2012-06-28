@@ -33,7 +33,9 @@ extern "C" {
 #endif
     
 extern struct trace_log_descriptor __static_log_information_start;
-extern int __local_obj_key __attribute__ ((visibility ("internal")));
+extern unsigned int __local_obj_key __attribute__ ((visibility ("internal")));
+struct trace_buffer;
+    
 #define __repr__ _trace_represent(unsigned int *buf_left, struct trace_record *_record, struct trace_record **__record_ptr, unsigned char **typed_buf)
     unsigned short int trace_get_pid(void);
     unsigned short int trace_get_tid(void);
@@ -44,7 +46,8 @@ extern int __local_obj_key __attribute__ ((visibility ("internal")));
     unsigned short trace_get_nesting_level(void);
     unsigned short trace_get_nesting_level(void);
     struct trace_record *trace_get_record(enum trace_severity severity, unsigned int *generation);
-    int trace_buffer_allocated(void);
+    struct trace_buffer *get_current_trace_buffer(void);
+    unsigned int trace_allocate_obj_key(void);
     
 #define trace_atomic_t int
 

@@ -598,13 +598,13 @@ void TraceCall::expand()
 {
     std::string declaration = getTraceDeclaration();
     std::string trace_write_expression = varlength_getFullTraceWriteExpression();
-    replaceExpr(call_expr, "{" + declaration + "if (trace_buffer_allocated()){"  + trace_write_expression + "}}");    
+    replaceExpr(call_expr, "{" + declaration + "if (get_current_trace_buffer()){"  + trace_write_expression + "}}");    
 }
 
 void TraceCall::expandWithoutDeclaration()
 {
     std::string trace_write_expression = varlength_getTraceWriteExpression();
-    replaceExpr(call_expr, "if (trace_buffer_allocated()){"  + trace_write_expression + "}");    
+    replaceExpr(call_expr, "if (get_current_trace_buffer()){"  + trace_write_expression + "}");    
 }
 
 
@@ -1196,7 +1196,7 @@ void DeclIterator::VisitFunctionDecl(FunctionDecl *D) {
         trace_call.setSeverity(severity);
         trace_call.setKind("TRACE_LOG_DESCRIPTOR_KIND_FUNC_LEAVE");
         trace_call.addTraceParam(function_name_param);
-        Rewrite->ReplaceText(endLocation, 1, "{if (trace_buffer_allocated()) {trace_decrement_nesting_level(); " + trace_call.getExpansion() + "}}}");
+        Rewrite->ReplaceText(endLocation, 1, "{if (get_current_trace_buffer()) {trace_decrement_nesting_level(); " + trace_call.getExpansion() + "}}}");
     }
     
     for (FunctionDecl::param_const_iterator I = D->param_begin(),
@@ -1217,7 +1217,7 @@ void DeclIterator::VisitFunctionDecl(FunctionDecl *D) {
     }
 
 
-    Rewrite->InsertText(function_start, "if (trace_buffer_allocated()){" + trace_call.getExpansion() + "trace_increment_nesting_level();}", true);
+    Rewrite->InsertText(function_start, "if (get_current_trace_buffer()){" + trace_call.getExpansion() + "trace_increment_nesting_level();}", true);
 exit:
     stmtiterator.Visit(D->getBody());
 }
@@ -1572,7 +1572,7 @@ void StmtIterator::VisitReturnStmt(ReturnStmt *S)
 expand:
    std::string traceExpansion = trace_call.getExpansion();
    Rewrite->InsertText(onePastSemiLoc, "}", true);
-   Rewrite->ReplaceText(startLoc, 6, "{if (trace_buffer_allocated()) {trace_decrement_nesting_level(); " + traceExpansion + "} return ");
+   Rewrite->ReplaceText(startLoc, 6, "{if (get_current_trace_buffer()) {trace_decrement_nesting_level(); " + traceExpansion + "} return ");
    return;
 }
 

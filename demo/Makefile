@@ -9,15 +9,15 @@ LDFLAGS=-L$(TRACES_ROOT_DIR)
 all: demo
 
 demo: demo.o shared-demo-1 shared-demo-2
-	$(CCWRAP) g++ $(LDFLAGS) demo.o ../libtraceuser.a -lrt -L. -lshared-demo-1 -lshared-demo-2 -o demo
+	$(CCWRAP) g++ $(LDFLAGS) demo.o ../libtraceuser_static.a -lrt -L. -ltraceuser -lshared-demo-1 -lshared-demo-2 -o demo
 
 shared-demo-1.o: CXXFLAGS=-I ../include -fPIC 
 shared-demo-2.o: CXXFLAGS=-I ../include -fPIC
 shared-demo-1: shared-demo-1.o
-	$(CCWRAP) g++ $(LDFLAGS) -fPIC -shared shared-demo-1.o ../libtraceuser.a -lrt -o libshared-demo-1.so
+	$(CCWRAP) g++ $(LDFLAGS) -fPIC -shared shared-demo-1.o ../libtraceuser_static.a -ltraceuser -lrt -o libshared-demo-1.so
 
 shared-demo-2: shared-demo-2.o
-	$(CCWRAP) g++ $(LDFLAGS) -fPIC -shared shared-demo-2.o ../libtraceuser.a -lrt -o libshared-demo-2.so
+	$(CCWRAP) g++ $(LDFLAGS) -fPIC -shared shared-demo-2.o ../libtraceuser_static.a -ltraceuser -lrt -o libshared-demo-2.so
 
 clean:
 	rm -f *.so *.o demo

@@ -494,7 +494,6 @@ static int write_metadata_header_start(struct trace_dumper_configuration_s *conf
     rec.pid = mapped_buffer->pid;
     rec.ts = trace_get_nsec();
     rec.u.metadata.metadata_size_bytes = mapped_metadata->size;
-    printf("Object key %d\n", mapped_metadata->obj_key);
     rec.obj_key = mapped_metadata->obj_key;
     SIMPLE_WRITE(conf, &rec, sizeof(rec));
     if (rc != sizeof(rec)) {
