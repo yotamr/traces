@@ -431,6 +431,7 @@ std::string TraceCall::varlength_getTraceWriteExpression()
 
         if (param.isSimple()) {
             start_record << varlength_writeSimpleValue(param.expression, param.type_name, param.is_pointer, param.is_reference);
+            continue;
         }
 
         if (param.isVarString()) {
@@ -451,6 +452,33 @@ std::string TraceCall::varlength_getTraceWriteExpression()
             start_record << "if (rlen || ((*buf_left) == 0)) {";
             start_record << varlength_commitAndAllocateRecord(severity);
             start_record << "}} while (rlen); }";
+            continue;
+        }
+
+        if (param.isBuffer()) {
+            std::string buf_left_str("(*buf_left) - 1");
+            std::string rlen_str("rlen");
+
+            start_record << "{ " << "const char *" << " _s_ = (" << castTo(ast.getLangOptions(), param.expression, "const char *") << ");";
+            if (param.size) {
+                start_record << "unsigned int rlen = _s_ ? " << param.size << " : 0;";
+            } else {
+                start_record << "unsigned int rlen = _s_ ? " << param.size_expression << "): 0;";
+            }
+            
+            start_record << "do { ";
+            start_record << "unsigned int copy_size = " << genMIN(rlen_str, buf_left_str) << ";";
+            start_record << "__builtin_memcpy(&((*typed_buf)[1]), _s_, copy_size);";
+            start_record << "(*typed_buf)[0] = copy_size;";
+            start_record << "(*typed_buf)[0] |= (rlen - copy_size) ? 128 : 0;";
+            start_record << "(*typed_buf) += 1 + copy_size;";
+            start_record << "rlen -= copy_size;";
+            start_record << "(*buf_left) -= copy_size + 1;";
+            start_record << "_s_ += copy_size;";
+            start_record << "if (rlen || ((*buf_left) == 0)) {";
+            start_record << varlength_commitAndAllocateRecord(severity);
+            start_record << "}} while (rlen); }";
+            continue;
         }
 
         if (param.trace_call) {
@@ -466,6 +494,7 @@ std::string TraceCall::varlength_getTraceWriteExpression()
             start_record << param.expression;
             start_record << "(buf_left, _record, __record_ptr, typed_buf);";
         }
+        continue;
      }
      
      return start_record.str();
@@ -539,7 +568,7 @@ std::string TraceCall::constlength_writeSimpleValue(std::string &expression, std
     serialized << "}";
     return serialized.str();
 }
-    
+
 std::string TraceCall::varlength_writeSimpleValue(std::string &expression, std::string &type_name, bool is_pointer, bool is_reference)
 {
     std::stringstream serialized;
@@ -578,8 +607,8 @@ std::string TraceCall::constlength_getTraceWriteExpression(unsigned int *buf_lef
         
         if (param.isSimple()) {
             start_record << constlength_writeSimpleValue(param.expression, param.type_name, param.is_pointer, param.is_reference, param.size, buf_left);
+            continue;
         }
-
     }
 
     return start_record.str();
@@ -795,7 +824,7 @@ bool TraceParam::parseHexBufParam(const Expr *expr)
     }
 
     flags |= TRACE_PARAM_FLAG_UNSIGNED | TRACE_PARAM_FLAG_VARRAY | TRACE_PARAM_FLAG_NUM_8 | TRACE_PARAM_FLAG_HEX;
-   
+    
     if (isa<VariableArrayType>(A)) {
         const VariableArrayType *VAT = dyn_cast<VariableArrayType>(A);
         size_expression = getLiteralExpr(ast, Rewrite, VAT->getSizeExpr());
@@ -805,7 +834,6 @@ bool TraceParam::parseHexBufParam(const Expr *expr)
     }
 
     expression = getLiteralExpr(ast, Rewrite, expr);
-    
     return true;
 }
         
@@ -952,7 +980,7 @@ bool TraceCall::constantSizeTrace(void)
 {
     for (unsigned int i = 0; i < args.size(); i++) {
         TraceParam &param = args[i];
-        if (param.isVarString()) {
+        if (param.isVarString() || param.isBuffer() || param.trace_call) {
             return false;
         }
 
@@ -974,7 +1002,7 @@ bool TraceCall::parseTraceParams(CallExpr *S, std::vector<TraceParam> &args)
             if (trace_param.const_str.length() == 0 && valid_param_name(trace_param.expression)) {
                 trace_param.param_name = trace_param.expression;
             }
-            
+
             args.push_back(trace_param);
         } else {
             unknownTraceParam(call_args[i]);

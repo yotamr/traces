@@ -532,7 +532,6 @@ do {                                                                            
                                                                                          \
                 if ((param + 1)->flags != 0) {                                           \
                     SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));                     \
-                    SIMPLE_APPEND_FORMATTED_TEXT(delimiter);                             \
                 }                                                                        \
             } else {                                                                     \
                 SIMPLE_APPEND_FORMATTED_TEXT("<cstr?>");                                 \
@@ -797,12 +796,12 @@ const char *escapes[] = {
 };
 
 
-static char *escape_string(const char *input, char *output, unsigned output_size)
+static char *escape_string(const char *input, unsigned int input_length, char *output, unsigned output_size)
 {
     unsigned int i;
     unsigned int current_offset = 0;
     unsigned int escaped_length;
-    for (i = 0; i < strlen(input); i++) {
+    for (i = 0; i < input_length; i++) {
         escaped_length = strlen(escapes[(int) input[i]]);
         if ( (escaped_length + current_offset) > output_size - 1) {
             return NULL;
@@ -817,7 +816,7 @@ static char *escape_string(const char *input, char *output, unsigned output_size
 }
 
 #define HANDLE_VSTR()                                                                    \
-            if (param->flags & TRACE_PARAM_FLAG_STR) {                                   \
+            if (param->flags & TRACE_PARAM_FLAG_VARRAY) {                                \
                 SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD("\""));                         \
             }                                                                            \
 			                                                                             \
@@ -830,17 +829,16 @@ static char *escape_string(const char *input, char *output, unsigned output_size
 				memcpy(strbuf, pdata + 1, len);                                          \
 				strbuf[len] = 0;                                                         \
 				pdata += sizeof(len) + len;                                              \
-				if (param->flags & TRACE_PARAM_FLAG_STR) {                               \
+				if (param->flags & TRACE_PARAM_FLAG_VARRAY) {                            \
                     SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD(""));                       \
-                    SIMPLE_APPEND_FORMATTED_TEXT(escape_string(strbuf, escaped_buf, sizeof(escaped_buf))); \
+                    SIMPLE_APPEND_FORMATTED_TEXT(escape_string(strbuf, len, escaped_buf, sizeof(escaped_buf))); \
                     SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));                     \
 				}                                                                        \
                                                                                          \
-                if (param->flags & TRACE_PARAM_FLAG_STR && !continuation) {              \
+                if (param->flags & TRACE_PARAM_FLAG_VARRAY && !continuation) {           \
                     SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD(""));                       \
                     SIMPLE_APPEND_FORMATTED_TEXT("\"");                                  \
                     SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));                     \
-                    SIMPLE_APPEND_FORMATTED_TEXT(delimiter);                             \
                 }                                                                        \
                 if (!continuation) {                                                     \
                     break;                                                               \
@@ -952,7 +950,7 @@ static int format_typed_params(trace_parser_t *parser, struct trace_parser_buffe
             }
         }
         
-        if (param->flags & TRACE_PARAM_FLAG_NUM_8) {
+        if (param->flags & TRACE_PARAM_FLAG_NUM_8 && !(param->flags & TRACE_PARAM_FLAG_VARRAY)) {
             if (describe_params) {
                 SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD("<char>"));
                 SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
@@ -961,7 +959,7 @@ static int format_typed_params(trace_parser_t *parser, struct trace_parser_buffe
             }
         }
         
-        if (param->flags & TRACE_PARAM_FLAG_NUM_16) {
+        if (param->flags & TRACE_PARAM_FLAG_NUM_16 && !(param->flags & TRACE_PARAM_FLAG_VARRAY)) {
             if (describe_params) {
                 SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD("<short>"));
                 SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
@@ -970,7 +968,7 @@ static int format_typed_params(trace_parser_t *parser, struct trace_parser_buffe
             }
         }
 
-        if (param->flags & TRACE_PARAM_FLAG_NUM_32) {
+        if (param->flags & TRACE_PARAM_FLAG_NUM_32 && !(param->flags & TRACE_PARAM_FLAG_VARRAY)) {
             if (describe_params) {
                 SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD("<int>"));
                 SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));
@@ -979,7 +977,7 @@ static int format_typed_params(trace_parser_t *parser, struct trace_parser_buffe
             }
         }
 
-        if (param->flags & TRACE_PARAM_FLAG_NUM_64) {
+        if (param->flags & TRACE_PARAM_FLAG_NUM_64 && !(param->flags & TRACE_PARAM_FLAG_VARRAY)) {
             if (describe_params) {
                 SIMPLE_APPEND_FORMATTED_TEXT(F_CYAN_BOLD("<long long>"));
                 SIMPLE_APPEND_FORMATTED_TEXT(ANSI_DEFAULTS(""));

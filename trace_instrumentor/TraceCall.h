@@ -196,7 +196,7 @@ TraceParam(llvm::raw_ostream &out, DiagnosticsEngine &_Diags, ASTContext &_ast, 
     }
 
     bool isBuffer() {
-        if (flags & TRACE_PARAM_FLAG_VARRAY) {
+        if (flags & (TRACE_PARAM_FLAG_VARRAY | TRACE_PARAM_FLAG_NUM_8)) {
             return true;
         } else {
             return false;
