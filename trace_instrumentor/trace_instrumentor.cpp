@@ -46,7 +46,7 @@ using namespace clang;
 namespace {
 static const Type *get_expr_type(const Expr *expr)
 {
-    return expr->getType().getCanonicalType().split().first;
+    return expr->getType().getCanonicalType().split().Ty;
 }
 
  std::string castTo(LangOptions const& langOpts, std::string orig_expr, std::string cast_type)
@@ -127,7 +127,7 @@ static SourceLocation getReturnStmtEnd(ASTContext &ast, Rewriter *Rewrite, Retur
 
 bool TraceParam::parseBasicTypeParam(QualType qual_type)
 {
-    const Type *type = qual_type.split().first;
+    const Type *type = qual_type.split().Ty;
 
 
     if (type->isReferenceType() || type->isPointerType()) {
@@ -158,7 +158,7 @@ bool TraceParam::parseBasicTypeParam(QualType qual_type)
     const BuiltinType *BT = qual_type->getAs<BuiltinType>();
     if (BT->getKind() == BuiltinType::Double) {
         size = ast.getTypeSize(type) / 8;
-        type_name = QualType(qual_type.split().first, 0).getAsString();
+        type_name = QualType(qual_type.split().Ty, 0).getAsString();
         flags |= TRACE_PARAM_FLAG_DOUBLE;
         return true; 
     }
@@ -190,7 +190,7 @@ bool TraceParam::parseBasicTypeParam(QualType qual_type)
     }
 
     size = ast.getTypeSize(type) / 8;
-    type_name = QualType(qual_type.split().first, 0).getAsString();
+    type_name = QualType(qual_type.split().Ty, 0).getAsString();
     if (type_name.compare("_Bool") == 0) {
             type_name = "bool";
     }
@@ -243,7 +243,7 @@ bool TraceParam::parseRecordTypeParam(const Expr *expr)
 
 
 bool TraceParam::parseEnumTypeParam(QualType qual_type) {
-    if (!qual_type.split().first->isEnumeralType()) {
+    if (!qual_type.split().Ty->isEnumeralType()) {
         return false;
     }
 
@@ -252,7 +252,7 @@ bool TraceParam::parseEnumTypeParam(QualType qual_type) {
         return false;
     }
     
-    referenceType(qual_type.split().first);
+    referenceType(qual_type.split().Ty);
     flags |= TRACE_PARAM_FLAG_ENUM;
     type_name = qual_type.getAsString();
     size = 4;
@@ -342,12 +342,12 @@ void TraceCall::replaceExpr(const Expr *expr, std::string replacement)
 
 std::string TraceCall::constlength_commitRecord()
 {
-    return "__builtin_memcpy(" + castTo(ast.getLangOptions(), "_record_ptr", "char *") + ", " + castTo(ast.getLangOptions(), "&_record", "char *") + ", sizeof(struct trace_record));";
+    return "__builtin_memcpy(" + castTo(ast.getLangOpts(), "_record_ptr", "char *") + ", " + castTo(ast.getLangOpts(), "&_record", "char *") + ", sizeof(struct trace_record));";
 }
 
 std::string TraceCall::varlength_commitRecord()
 {
-    return "__builtin_memcpy(" + castTo(ast.getLangOptions(), "(*__record_ptr)", "char *") + ", " + castTo(ast.getLangOptions(), "_record", "char *") + ", sizeof(struct trace_record));";
+    return "__builtin_memcpy(" + castTo(ast.getLangOpts(), "(*__record_ptr)", "char *") + ", " + castTo(ast.getLangOpts(), "_record", "char *") + ", sizeof(struct trace_record));";
 }
 
 std::string TraceCall::varlength_getRecord(enum trace_severity severity)
@@ -439,7 +439,7 @@ std::string TraceCall::varlength_getTraceWriteExpression()
             std::string rlen_str("rlen");
 
             start_record << "{ " << param.type_name << " _s_ = (" << param.expression << ");";
-            start_record << "unsigned int rlen = _s_ ? __builtin_strlen(" << castTo(ast.getLangOptions(), "_s_", "const char *") << "): 0;";
+            start_record << "unsigned int rlen = _s_ ? __builtin_strlen(" << castTo(ast.getLangOpts(), "_s_", "const char *") << "): 0;";
             start_record << "do { ";
             start_record << "unsigned int copy_size = " << genMIN(rlen_str, buf_left_str) << ";";
             start_record << "__builtin_memcpy(&((*typed_buf)[1]), _s_, copy_size);";
@@ -459,7 +459,7 @@ std::string TraceCall::varlength_getTraceWriteExpression()
             std::string buf_left_str("(*buf_left) - 1");
             std::string rlen_str("rlen");
 
-            start_record << "{ " << "const char *" << " _s_ = (" << castTo(ast.getLangOptions(), param.expression, "const char *") << ");";
+            start_record << "{ " << "const char *" << " _s_ = (" << castTo(ast.getLangOpts(), param.expression, "const char *") << ");";
             if (param.size) {
                 start_record << "unsigned int rlen = _s_ ? " << param.size << " : 0;";
             } else {
@@ -511,7 +511,7 @@ std::string TraceCall::varlength_getFullTraceWriteExpression()
     get_record << "struct trace_record *_record = &__record;";
     get_record << "struct trace_record *__record_ptr_alloc;";
     get_record << "struct trace_record **__record_ptr = &__record_ptr_alloc;";
-    get_record << "unsigned char *_payload_ptr = " << castTo(ast.getLangOptions(), "&_record->u.payload", "unsigned char *") << ";";
+    get_record << "unsigned char *_payload_ptr = " << castTo(ast.getLangOpts(), "&_record->u.payload", "unsigned char *") << ";";
     get_record << "unsigned char **typed_buf =  &_payload_ptr;";
     get_record << varlength_getRecord(severity);
     start_record << varlength_initializeTypedRecord(severity);
@@ -546,9 +546,9 @@ std::string TraceCall::constlength_writeSimpleValue(std::string &expression, std
 
     serialized << "{";
     if (is_pointer) {
-        serialized << "volatile const void * __src__ =  " << castTo(ast.getLangOptions(), expression, "volatile const void *") << ";";
+        serialized << "volatile const void * __src__ =  " << castTo(ast.getLangOpts(), expression, "volatile const void *") << ";";
     } else if (is_reference) {
-        serialized << "volatile const void * __src__ =  " << castTo(ast.getLangOptions(), "&" + expression, "volatile const void *") << ";";
+        serialized << "volatile const void * __src__ =  " << castTo(ast.getLangOpts(), "&" + expression, "volatile const void *") << ";";
     } else {
         serialized << type_name <<  " __src__ = (" << expression << ");";
     }
@@ -559,7 +559,7 @@ std::string TraceCall::constlength_writeSimpleValue(std::string &expression, std
     if ((*buf_left) == 0) {
         if (copy_size) {
             serialized << constlength_commitAndAllocateRecord(severity, buf_left);
-            serialized << "__builtin_memcpy(&_record.u.payload, " + castTo(ast.getLangOptions(), "(&__src__", "const char *") << "+ " << copy_size << "), " << value_size - copy_size << ");";
+            serialized << "__builtin_memcpy(&_record.u.payload, " + castTo(ast.getLangOpts(), "(&__src__", "const char *") << "+ " << copy_size << "), " << value_size - copy_size << ");";
         }
         
         (*buf_left) -= value_size - copy_size;
@@ -577,9 +577,9 @@ std::string TraceCall::varlength_writeSimpleValue(std::string &expression, std::
 
     serialized << "{";
     if (is_pointer) {
-        serialized << "volatile const void * __src__ =  " << castTo(ast.getLangOptions(), expression, "volatile const void *") << ";";
+        serialized << "volatile const void * __src__ =  " << castTo(ast.getLangOpts(), expression, "volatile const void *") << ";";
     } else if (is_reference) {
-        serialized << "volatile const void * __src__ =  " << castTo(ast.getLangOptions(), "&" + expression, "volatile const void *") << ";";
+        serialized << "volatile const void * __src__ =  " << castTo(ast.getLangOpts(), "&" + expression, "volatile const void *") << ";";
     } else {
         serialized << type_name <<  " __src__ = (" << expression << ");";
     }
@@ -591,7 +591,7 @@ std::string TraceCall::varlength_writeSimpleValue(std::string &expression, std::
     serialized << "(*buf_left) -= copy_size;";
     serialized << "if ((*buf_left) == 0) {";
     serialized << varlength_commitAndAllocateRecord(severity);
-    serialized << "__builtin_memcpy((*typed_buf), " + castTo(ast.getLangOptions(), "&__src__", "const char *") + "+ copy_size, sizeof(__src__) - copy_size);";
+    serialized << "__builtin_memcpy((*typed_buf), " + castTo(ast.getLangOpts(), "&__src__", "const char *") + "+ copy_size, sizeof(__src__) - copy_size);";
     serialized << "(*typed_buf) += " << expression_sizeof << " - copy_size;";
     serialized << "(*buf_left) -= " << expression_sizeof << " - copy_size;";
     serialized << "}}";
@@ -738,7 +738,7 @@ bool TraceParam::parseClassTypeParam(const Expr *expr)
         return false;
     }
 
-    const Type *pointeeType = type->getPointeeType().split().first;
+    const Type *pointeeType = type->getPointeeType().split().Ty;
     if (!pointeeType->isClassType()) {
         return false;
     }
@@ -813,11 +813,11 @@ bool TraceParam::parseHexBufParam(const Expr *expr)
     }
 
     const ArrayType *A = dyn_cast<ArrayType>(pointeeType);
-    if (A->getElementType().split().first->getTypeClass() != Type::Typedef) {
+    if (A->getElementType().split().Ty->getTypeClass() != Type::Typedef) {
         return false;
     }
 
-    const TypedefType *TDP = dyn_cast<TypedefType>(A->getElementType().split().first);
+    const TypedefType *TDP = dyn_cast<TypedefType>(A->getElementType().split().Ty);
     const TypedefNameDecl *decl = TDP->getDecl();
     if (decl->getDeclName().getAsString().compare("hex_t") != 0) {
         return false;
@@ -850,12 +850,12 @@ std::string TraceParam::getLiteralString(const Expr *expr)
 
 bool TraceParam::parseStringParam(QualType qual_type)
 {
-    const Type *type = qual_type.split().first;
+    const Type *type = qual_type.split().Ty;
     if (!type->isPointerType()) {
         return false;
     }
     
-    const Type *pointeeType = type->getPointeeType().split().first;
+    const Type *pointeeType = type->getPointeeType().split().Ty;
     if (!(pointeeType->isBuiltinType() && pointeeType->isCharType())) {
         return false;
     }
@@ -874,7 +874,7 @@ bool TraceParam::parseStringParam(const Expr *expr)
         return false;
     }
     
-    const Type *pointeeType = type->getPointeeType().split().first;
+    const Type *pointeeType = type->getPointeeType().split().Ty;
     if (!(pointeeType->isBuiltinType() && pointeeType->isCharType())) {
         return false;
     }
@@ -1464,6 +1464,50 @@ void StmtIterator::VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *S) {
     VisitStmt(S);
 }
 
+void StmtIterator::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
+    VisitStmt(S);
+}
+
+void StmtIterator::VisitPseudoObjectExpr(clang::PseudoObjectExpr *S) {
+    VisitStmt(S);
+}
+
+void StmtIterator::VisitObjCBoolLiteralExpr(clang::ObjCBoolLiteralExpr *S) {
+    VisitStmt(S);
+}
+
+void StmtIterator::VisitObjCDictionaryLiteral(clang::ObjCDictionaryLiteral *S) {
+    VisitStmt(S);
+}
+
+void StmtIterator::VisitObjCNumericLiteral(clang::ObjCNumericLiteral *S) {
+    VisitStmt(S);
+}
+
+void StmtIterator::VisitLambdaExpr(clang::LambdaExpr *S) {
+    VisitStmt(S);
+}
+
+void StmtIterator::VisitObjCArrayLiteral(clang::ObjCArrayLiteral *S) {
+    VisitStmt(S);
+}
+
+void StmtIterator::VisitTypeTraitExpr(clang::TypeTraitExpr *S) {
+    VisitStmt(S);
+}
+
+void StmtIterator::VisitUserDefinedLiteral(clang::UserDefinedLiteral *S) {
+    VisitStmt(S);
+}
+
+void StmtIterator::VisitAttributedStmt(clang::AttributedStmt *S) {
+    VisitStmt(S);
+}
+
+void StmtIterator::VisitObjCSubscriptRefExpr(clang::ObjCSubscriptRefExpr *S) {
+    VisitStmt(S);
+}
+
 void StmtIterator::VisitObjCIndirectCopyRestoreExpr(ObjCIndirectCopyRestoreExpr *S) {
     
     VisitStmt(S);
@@ -1945,13 +1989,6 @@ void StmtIterator::VisitBlockExpr(BlockExpr *S)
     VisitDecl(S->getBlockDecl());
 }
 
-void StmtIterator::VisitBlockDeclRefExpr(BlockDeclRefExpr *S)
-{
-
-    VisitExpr(S);
-    VisitDecl(S->getDecl());
-}
-
 void StmtIterator::VisitCXXOperatorCallExpr(CXXOperatorCallExpr *S)
 {
 
@@ -2100,7 +2137,6 @@ void StmtIterator::VisitCXXNewExpr(CXXNewExpr *S)
     VisitType(S->getAllocatedType());
     VisitDecl(S->getOperatorNew());
     VisitDecl(S->getOperatorDelete());
-    VisitDecl(S->getConstructor());
 }
 
 void StmtIterator::VisitCXXPseudoDestructorExpr(CXXPseudoDestructorExpr *S)
@@ -2481,15 +2517,15 @@ public:
             return;
         }
 
-        SourceRange range = getDeclRange(SM, &C.getLangOptions(), record_struct, true);
+        SourceRange range = getDeclRange(SM, &C.getLangOpts(), record_struct, true);
         Rewrite.InsertText(range.getEnd(), global_traces.str());
     }
     
     void HandleTranslationUnit(ASTContext &C) {
-        Rewrite.setSourceMgr(C.getSourceManager(), C.getLangOptions());
+        Rewrite.setSourceMgr(C.getSourceManager(), C.getLangOpts());
         SM = &C.getSourceManager();
         MainFileID = SM->getMainFileID();
-        DeclIterator decliterator(Out, Diags, C, &Rewrite, SM, C.getLangOptions(), referencedTypes, globalTraces);
+        DeclIterator decliterator(Out, Diags, C, &Rewrite, SM, C.getLangOpts(), referencedTypes, globalTraces);
         decliterator.Visit(C.getTranslationUnitDecl());
         buildReferencedTypes();
         buildGlobalTraces();
