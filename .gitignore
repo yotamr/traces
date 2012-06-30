@@ -3,6 +3,7 @@ trace_reader/simple_trace_reader
 trace_instrumentor/trace_instrumentor.so
 interactive_reader/_trace_parser_ctypes.py
 traces.so
+libtraceuser.so
 demo/demo
 lib*.a
 *.o
