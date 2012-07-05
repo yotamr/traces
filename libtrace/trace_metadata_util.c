@@ -16,10 +16,11 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 ***/
 
 #include <stdio.h>
+#include <stdint.h>
 #include "trace_defs.h"
 #include "trace_metadata_util.h"
 
-static int relocate_ptr(unsigned long long original_base_address, unsigned long long new_base_address, unsigned long long *ptr)
+static int relocate_ptr(intptr_t original_base_address, intptr_t new_base_address, intptr_t *ptr)
 {
     (*ptr) -= original_base_address;
     (*ptr) += new_base_address;
@@ -35,11 +36,11 @@ static void relocate_descriptor_parameters(void *old_base, void *new_base, struc
     while (param->flags != 0) {
 
         if (param->str) {
-            relocate_ptr((unsigned long long) old_base, (unsigned long long) new_base, (unsigned long long *) &param->str);
+            relocate_ptr((intptr_t) old_base, (intptr_t) new_base, (intptr_t *) &param->str);
         }
 
         if (param->param_name) {
-            relocate_ptr((unsigned long long) old_base, (unsigned long long) new_base, (unsigned long long *) &param->param_name);
+            relocate_ptr((intptr_t) old_base, (intptr_t) new_base, (intptr_t *) &param->param_name);
         }
 
         param++;
@@ -51,7 +52,7 @@ static void relocate_type_definition_params(void *old_base, void *new_base, stru
     struct trace_enum_value *param;
     param = type->enum_values;
     while (param->name != NULL) {
-        relocate_ptr((unsigned long long) old_base, (unsigned long long) new_base, (unsigned long long *) &param->name);
+        relocate_ptr((intptr_t) old_base, (intptr_t) new_base, (intptr_t *) &param->name);
         param++;
     }
 }
@@ -64,13 +65,13 @@ void relocate_metadata(void *original_base_address, void *new_base_address, char
     struct trace_type_definition *type_definitions = (struct trace_type_definition *) (data + (sizeof(struct trace_log_descriptor) * descriptor_count));
 
     for (i = 0; i < descriptor_count; i++) {
-        relocate_ptr((unsigned long long)original_base_address, (unsigned long long)new_base_address, (unsigned long long *) &log_descriptors[i].params);
+        relocate_ptr((intptr_t)original_base_address, (intptr_t)new_base_address, (intptr_t *) &log_descriptors[i].params);
         relocate_descriptor_parameters(original_base_address, new_base_address, &log_descriptors[i]);
     }
 
     for (i = 0; i < type_count; i++) {
-        relocate_ptr((unsigned long long)original_base_address, (unsigned long long)new_base_address, (unsigned long long *) &type_definitions[i].type_name);
-        relocate_ptr((unsigned long long)original_base_address, (unsigned long long)new_base_address, (unsigned long long *) &type_definitions[i].params);
+        relocate_ptr((intptr_t)original_base_address, (intptr_t)new_base_address, (intptr_t *) &type_definitions[i].type_name);
+        relocate_ptr((intptr_t)original_base_address, (intptr_t)new_base_address, (intptr_t *) &type_definitions[i].params);
         relocate_type_definition_params(original_base_address, new_base_address, &type_definitions[i]);
     }
 }
