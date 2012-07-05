@@ -59,7 +59,7 @@ def get_arch_triplet(compiler):
             target = line.split(':')[1].strip()
             if target.startswith('arm'):
                 return ['-triple', 'armv7-unknown-linux-gnueabi']
-            elif target.startswith('x86'):
+            elif target.startswith(('x86', 'i686')):
                 return []
             else:
                 raise UnsupportedTarget(target)

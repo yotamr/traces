@@ -51,7 +51,7 @@ int main(void) {
     while (1) {
         increment_twice(&value, 1, 2, 3, 4, 5, 6);
         DEBUG("Oh no");
-        WARN(some_str, 100, 150, 100, 100, 100, 100, some_str, 100, 150, 200, 500, 6710, 1021);
+        WARN(HEX_REPR(some_str, 50), some_str, 100, 150, 100, 100, 100, 100, some_str, 100, 150, 200, 500, 6710, 1021);
         value = calculate(CALCULATION_TYPE_DECREMENT, value);
         usleep(10000);
     }
