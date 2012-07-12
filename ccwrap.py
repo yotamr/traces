@@ -118,6 +118,7 @@ def main():
     if c_index == -1:
         ret = spawn(args)
         return ret
+    c_file = args[c_index]
 
     cpp_args = list(args)
     cpp_args[args.index('-c')] = '-E'
@@ -134,7 +135,6 @@ def main():
         cpp_args[o_index] = pp_file
 
     handle_dependency_option(cpp_args, c_index, o_index, o_file)    
-    c_file = args[c_index]
     source_data = file(c_file).read()
     if 'ANDROID_SINGLETON_STATIC_INSTANCE' in source_data:
         return spawn(args)
