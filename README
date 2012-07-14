@@ -36,8 +36,8 @@ Quick start
 -----------
 
 traces has the following dependencies:
-    clang 3.0 or above
-    Python 2.6 or above
+    clang 3.1
+    Python 2.7 or above
     python-ctypeslib (for the interactive reader)
     python-urwid (for the interactive reader)
     gccxml
