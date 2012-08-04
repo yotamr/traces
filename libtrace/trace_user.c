@@ -298,9 +298,11 @@ static void init_records_metadata(void)
 
 static void map_dynamic_log_buffers()
 {
-    char shm_name[0x100];
+    char tmp_shm_name[0x100], shm_name[0x100];
+    
+    snprintf(tmp_shm_name, sizeof(shm_name), "%s%s%d__tmp_trace_data", SHM_PATH, TRACE_SHM_ID, getpid());
     snprintf(shm_name, sizeof(shm_name), "%s%s%d_dynamic_trace_data", SHM_PATH, TRACE_SHM_ID, getpid());
-    int shm_fd = open(shm_name, O_CREAT | O_RDWR, 0660);
+    int shm_fd = open(tmp_shm_name, O_CREAT | O_RDWR, 0660);
     if (shm_fd < 0) {
         return;
     }
@@ -312,6 +314,7 @@ static void map_dynamic_log_buffers()
     ASSERT(mapped_addr != NULL);
     set_current_trace_buffer_ptr((struct trace_buffer *)mapped_addr);
     init_records_metadata();
+    ASSERT(0 == rename(tmp_shm_name, shm_name));
 }
 
 int TRACE__register_buffer(const char *buffer_name)
