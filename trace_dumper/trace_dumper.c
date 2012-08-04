@@ -1282,10 +1282,10 @@ static int trace_flush_buffers(struct trace_dumper_configuration_s *conf)
 		if (delta == 0) {
             if (mapped_buffer->dead) {
                 discard_buffer(conf, mapped_buffer);
-                return 0;
-                break;
                 if (conf->attach_to_pid) {
                     return -1;
+                } else {
+                    break;
                 }
             } else {
                 continue;
