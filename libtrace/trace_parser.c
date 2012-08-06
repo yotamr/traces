@@ -475,23 +475,6 @@ void format_timestamp(trace_parser_t *parser, unsigned long long ts, char *times
       total_length += _srclen;                                                \
     } while (0);
     
-static void get_type(struct trace_parser_buffer_context *context, const char *type_name, struct trace_type_definition **type)
-{
-    struct trace_type_definition *tmp_type = context->types;
-    unsigned int i = 0;
-    for (i = 0; i < context->metadata->type_definition_count; i++) {
-        if (strcmp(tmp_type->type_name, type_name) == 0) {
-            *type = tmp_type;
-            return;
-        }
-
-        tmp_type++;
-    }
-
-    *type = NULL;
-}
-
-
 #define WRITE_SIMPLE_PDATA_VALUE(_unmodified, _unsigned, _leading_zero, _hex,  typename) \
 do {                                                                                     \
         const char *fmt_str = _unmodified;                                               \
@@ -856,23 +839,21 @@ static void get_enum_val_name(trace_parser_t *parser, struct trace_parser_buffer
 {
     struct trace_type_definition *enum_def;
     struct trace_enum_value *enum_value;
-    get_type(context, param->type_name, &enum_def);
-    if (enum_def == NULL) {
+
+    /* TODO: Make sure not out of bounds */
+    if (param->type_id > context->metadata->type_definition_count) {
         snprintf(val_name, val_name_size, "%s", F_BLUE_BOLD("<? enum>"));
         return;
     }
-
-    enum_value = enum_def->enum_values;
-    while (enum_value->name) {
-        if (enum_value->value == value) {
-            snprintf(val_name, val_name_size, F_BLUE_BOLD("%s"), enum_value->name);
-            return;
-        }
-
-        enum_value++;
+    
+    enum_def = &context->types[param->type_id];
+    
+    if (value >= enum_def->member_count) {
+        snprintf(val_name, val_name_size, "%s", F_BLUE_BOLD("<? enum>"));
     }
-
-    snprintf(val_name, val_name_size, "%s", F_BLUE_BOLD("<? enum>"));
+    
+    enum_value = &enum_def->enum_values[value];
+    snprintf(val_name, val_name_size, F_BLUE_BOLD("%s"), enum_value->name);
     return;
 }
 

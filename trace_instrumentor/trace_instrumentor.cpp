@@ -297,6 +297,7 @@ std::string TraceCall::getTraceDeclaration()
     std::string flags;
     std::string str;
     std::string param_name;
+    std::string type_id;
     for (unsigned int i = 0; i < args.size(); i++) {
         TraceParam &param = args[i];
         param_name = "0";
@@ -315,11 +316,17 @@ std::string TraceCall::getTraceDeclaration()
                 str = "{\"" + param.type_name + "\"}";
             }
         }
+
+        if (param.flags & TRACE_PARAM_FLAG_ENUM) {
+            type_id = "&" + normalizeTypeName(param.type_name) + "_ptr" + " - &__type_information_start";
+        } else {
+            type_id = "0";
+        }
         
-        params << "{" << flags << ", " << param_name << "," << str << "},";
+        params << "{" << flags << ", " << type_id << ", " << param_name << "," << str << "},";
     }
 
-    params << "{0, 0, {0}}";
+    params << "{0, 0, 0}";
     std::stringstream descriptor;
     descriptor << "static struct trace_param_descriptor " << trace_call_name << "_params[] = {";
     descriptor << params.str() << "};";
@@ -2444,6 +2451,18 @@ public:
         return array_def.str();
     }
     
+    unsigned int getEnumMemberCount(EnumDecl *ED) {
+        unsigned int member_count = 0;
+        for (EnumDecl::enumerator_iterator
+                 Enum = ED->enumerator_begin(), EnumEnd = ED->enumerator_end();
+             Enum != EnumEnd; ++Enum) {
+            member_count++;
+        }
+
+        return member_count;
+    }
+        
+
     std::string getEnumMemberTraceDefinition(EnumDecl *ED, std::string &section_name, std::string &param_name) {
         std::stringstream enum_members;
 
@@ -2477,7 +2496,7 @@ public:
         type_definition << "struct trace_type_definition " << section_ptr_attribute << "* " << type_str << "_ptr = " << "&" << type_def_name << ";";
         type_definition << getEnumMemberTraceDefinition(ED, section_name, type_param_var_name);
         type_definition << "struct trace_type_definition " << section_defs_attribute  << type_str << "_type_definition = {";
-        type_definition << "TRACE_TYPE_ID_ENUM, \"" <<  QualType(type, 0).getAsString() << "\", {" << type_param_var_name  << "}};";
+        type_definition << "TRACE_TYPE_ID_ENUM, " << getEnumMemberCount(ED) << ", \"" <<  QualType(type, 0).getAsString() << "\", {" << type_param_var_name  << "}};";
         type_definition << "\n";
     }
         
@@ -2520,7 +2539,19 @@ public:
         SourceRange range = getDeclRange(SM, &C.getLangOpts(), record_struct, true);
         Rewrite.InsertText(range.getEnd(), global_traces.str());
     }
-    
+
+    void writeTypeDefinitions(ASTContext &C) {
+        StructFinder struct_finder;
+        RecordDecl *record_struct = struct_finder.findDeclByName(C.getTranslationUnitDecl(), "trace_log_descriptor");
+        if (record_struct == NULL) {
+            exit(1);
+            return;
+        }
+
+        SourceRange range = getDeclRange(SM, &C.getLangOpts(), record_struct, true);
+        Rewrite.InsertText(range.getEnd(), type_definition.str());
+    }
+
     void HandleTranslationUnit(ASTContext &C) {
         Rewrite.setSourceMgr(C.getSourceManager(), C.getLangOpts());
         SM = &C.getSourceManager();
@@ -2532,8 +2563,8 @@ public:
         if (const RewriteBuffer *RewriteBuf =
             Rewrite.getRewriteBufferFor(MainFileID)) {
             writeGlobalTraces(C);
+            writeTypeDefinitions(C);
             *OutFile << std::string(RewriteBuf->begin(), RewriteBuf->end());
-            *OutFile << type_definition.str();
         } else {
             StringRef buffer = SM->getBufferData(MainFileID).data();
             *OutFile << std::string(buffer);

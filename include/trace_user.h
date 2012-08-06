@@ -22,7 +22,7 @@ Copyright 2012 Yotam Rubin <yotamrubin@gmail.com>
 extern "C" {
 #endif
 
-void TRACE__fini(void);// __attribute__((destructor));
+void TRACE__fini(void);
 
 #ifndef __repr__    
 #define __repr__ _trace_represent()

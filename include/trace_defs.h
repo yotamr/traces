@@ -130,6 +130,7 @@ enum trace_file_type {
 
 struct trace_type_definition {
     enum trace_type_id type_id;
+    unsigned int member_count;
     const char *type_name;
     union  {
         // void * is used to allow static initlization of the union in C++, which does not support designated initializors
@@ -211,6 +212,7 @@ enum trace_param_desc_flags {
 
 struct trace_param_descriptor {
 	unsigned long flags;
+    unsigned long type_id;
     const char *param_name;
     union {
         const char *str;
