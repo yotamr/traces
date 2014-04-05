@@ -318,7 +318,7 @@ std::string TraceCall::getTraceDeclaration()
         }
 
         if (param.flags & TRACE_PARAM_FLAG_ENUM) {
-            type_id = "&" + normalizeTypeName(param.type_name) + "_ptr" + " - &__type_information_start";
+            type_id = "(unsigned long)&" + normalizeTypeName(param.type_name) + "_ptr";
         } else {
             type_id = "0";
         }

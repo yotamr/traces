@@ -65,6 +65,11 @@ static void copy_log_params_to_allocated_buffer(struct trace_log_descriptor *log
             ALLOC_STRING((*params)->param_name, param->param_name);
         }
 
+        // Relocate the type_id value and transform it to an index
+        if (param->flags & TRACE_PARAM_FLAG_ENUM) {
+            (*params)->type_id = (struct trace_type_definition **)param->type_id - &__type_information_start;
+        }
+
         (*params)++;
         param++;
     }
